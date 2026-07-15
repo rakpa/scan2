@@ -1,1 +1,61 @@
-...
+name: scan2
+description: "Scan2 - Production-quality cross-platform document scanner. Original branding, offline-first, CamScanner-equivalent features."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '^3.12.0'
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State Management - hand-written Riverpod providers
+  flutter_riverpod: ^2.5.1
+  riverpod: ^2.5.1
+
+  # Navigation
+  go_router: ^14.2.7
+
+  # Local Database
+  drift: ^2.20.0
+  drift_flutter: ^0.2.0
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  uuid: ^4.4.2
+
+  # Camera & Image Handling
+  camera: ^0.11.0+1
+  image_picker: ^1.1.2
+  image: ^4.3.0
+  vector_math: ^2.1.4
+
+  # OCR (on-device, offline)
+  google_mlkit_text_recognition: ^0.13.0
+
+  # Export & Share
+  pdf: ^3.11.1
+  printing: ^5.13.4
+  share_plus: ^10.0.2
+  archive: ^3.6.1
+
+  # Utils & Polish
+  intl: ^0.19.0
+  shared_preferences: ^2.3.2
+  permission_handler: ^11.3.1
+  flutter_staggered_grid_view: ^0.7.0
+  smooth_page_indicator: ^1.2.0+3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  drift_dev: ^2.20.0
+  build_runner: ^2.4.12
+  test: ^1.25.2
+
+flutter:
+  uses-material-design: true
+  generate: true
