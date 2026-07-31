@@ -1,7 +1,7 @@
 name: scan2
 description: "Scan2 - Production-quality cross-platform document scanner. Original branding, offline-first, CamScanner-equivalent features."
 publish_to: 'none'
-version: 1.0.1+710
+version: 1.0.1+711
 
 environment:
   sdk: '^3.12.0'

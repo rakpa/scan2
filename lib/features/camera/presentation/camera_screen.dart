@@ -270,8 +270,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   }
 
   Color get _overlayColor {
-    if (_confidence >= 0.78) return const Color(0xFF4CAF50);
-    if (_confidence >= 0.5) return const Color(0xFFFFC107);
+    if (_phase == DetectionPhase.capturing || _confidence >= 0.88) {
+      return const Color(0xFF4CAF50);
+    }
+    if (_confidence >= 0.62) return const Color(0xFFFFC107);
     return const Color(0xFF90CAF9);
   }
 

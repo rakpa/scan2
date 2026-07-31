@@ -29,7 +29,7 @@ class DocumentQuadDetector {
   const DocumentQuadDetector();
 
   /// Minimum fraction of the frame a document must cover to count.
-  static const _minAreaRatio = 0.06;
+  static const _minAreaRatio = 0.10;
 
   /// Hough slope range (± tan 31°) for "near-axis" document edges.
   static const _maxSlope = 0.6;
@@ -185,8 +185,11 @@ class DocumentQuadDetector {
     final weakest = supports.reduce(math.min);
 
     final confidence =
-        (0.28 + 0.50 * avg + 0.15 * weakest + 0.07 * math.min(areaRatio * 2, 1))
+        (0.20 + 0.45 * avg + 0.20 * weakest + 0.15 * math.min(areaRatio * 2, 1))
             .clamp(0.0, 0.97);
+
+    // Require a meaningful edge vote floor — random room edges rarely pass.
+    if (avg < 0.35 || weakest < 0.18) return null;
 
     return QuadDetection(
       corners: ordered
@@ -329,11 +332,13 @@ class DocumentQuadDetector {
 
     final edgeSupport = _edgeSupport(blurred, width, height, corners);
 
-    final confidence = (0.25 +
-            0.40 * edgeSupport +
-            0.20 * solidity +
+    final confidence = (0.20 +
+            0.35 * edgeSupport +
+            0.25 * solidity +
             0.10 * math.min(quadAreaRatio * 2.5, 1.0))
         .clamp(0.0, 0.90);
+
+    if (edgeSupport < 0.40 || solidity < 0.62) return null;
 
     final normalized = corners
         .map((c) => Offset(
