@@ -1,1 +1,104 @@
-...
+# Signed App Store .ipa for the Flutter app — built entirely on CI (no Mac).
+#
+# Repo secrets (same values across all your apps): APPLE_TEAM_ID, ASC_KEY_ID,
+# ASC_ISSUER_ID, ASC_KEY_P8. Optional after first successful build:
+# IOS_DIST_CERT_P12_BASE64, IOS_DIST_CERT_PASSWORD (reuse cert, avoid Apple limit).
+name: iOS Release (signed IPA)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Build number (CFBundleVersion). Bump for every upload.'
+        type: string
+        default: '1'
+      upload_to_testflight:
+        description: 'Also upload to TestFlight'
+        type: boolean
+        default: true
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      BUNDLE_ID: com.scan2.scan2
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      BUILD_NUMBER: ${{ inputs.build_number }}
+      UPLOAD_TESTFLIGHT: ${{ inputs.upload_to_testflight }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use newest Xcode (App Store requires the iOS 26 SDK / Xcode 26+)
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Fail fast if signing secrets are missing
+        env:
+          P8_PRESENT: ${{ secrets.ASC_KEY_P8 != '' }}
+        run: |
+          test -n "$TEAM_ID"          || { echo "::error::APPLE_TEAM_ID missing"; exit 1; }
+          test -n "$ASC_KEY_ID"       || { echo "::error::ASC_KEY_ID missing"; exit 1; }
+          test -n "$ASC_ISSUER_ID"    || { echo "::error::ASC_ISSUER_ID missing"; exit 1; }
+          test "$P8_PRESENT" = "true" || { echo "::error::ASC_KEY_P8 missing"; exit 1; }
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Dependencies
+        run: |
+          flutter --version
+          flutter pub get
+
+      - name: Write App Store Connect API key
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s\n' "${{ secrets.ASC_KEY_P8 }}" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          echo "API_KEY_PATH=$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: Prepare Flutter for Xcode (macOS paths)
+        run: |
+          flutter precache --ios
+          FLUTTER_ROOT="$(dirname "$(dirname "$(command -v flutter)")")"
+          echo "export FLUTTER_ROOT=\"$FLUTTER_ROOT\"" > ios/.xcode.env.local
+          echo 'export PATH="$FLUTTER_ROOT/bin:$PATH"' >> ios/.xcode.env.local
+
+      - name: Install fastlane
+        run: gem install fastlane --no-document
+
+      - name: Build & sign IPA (fastlane)
+        working-directory: ios
+        run: fastlane ios release
+        env:
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_DISABLE_COLORS: '1'
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_AUTO_REVOKE_STALE_CERTS: 'true'
+
+      - name: Upload distribution cert backup (first run only)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-dist-cert
+          path: build/dist_cert.p12
+          if-no-files-found: ignore
+
+      - name: Upload .ipa artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: build/ipa/*.ipa
+          if-no-files-found: error
+
+      - name: TestFlight upload reminder
+        if: success() && inputs.upload_to_testflight != true
+        run: |
+          echo "::warning::TestFlight upload was SKIPPED. The IPA is only in GitHub Actions artifacts."

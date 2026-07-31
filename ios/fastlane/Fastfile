@@ -1,0 +1,230 @@
+# fastlane release lane for the Flutter app on CI.
+# Reuses a stored distribution cert (GitHub secret) to avoid Apple's 2-3 cert limit.
+# cert + sigh via App Store Connect API, then `flutter build ipa`.
+
+require "base64"
+require "fileutils"
+require "shellwords"
+
+default_platform(:ios)
+
+FASTLANE_DIR = File.expand_path(__dir__)
+IOS_DIR = File.expand_path("..", FASTLANE_DIR)
+PROJECT_ROOT = File.expand_path("..", IOS_DIR)
+BUILD_DIR = File.join(PROJECT_ROOT, "build")
+FLUTTER_IPA_DIR = File.join(BUILD_DIR, "ios", "ipa")
+ARTIFACT_IPA_DIR = File.join(BUILD_DIR, "ipa")
+DIST_CERT_PATH = File.join(BUILD_DIR, "dist_cert.p12")
+
+APP_ID = ENV["BUNDLE_ID"] || "com.scan2.scan2"
+
+def cert_export_password
+  pwd = ENV["IOS_DIST_CERT_PASSWORD"].to_s.strip
+  pwd.empty? ? "scan-ci-export" : pwd
+end
+# Apple allows at most 2 distribution certs per team. CI runners never have the
+# private key for portal certs created on other machines, so cert() always tries
+# to mint a new identity unless IOS_DIST_CERT_P12_BASE64 is provided.
+APPLE_DISTRIBUTION_CERT_LIMIT = 2
+
+def connect_api_token
+  @connect_api_token ||= Spaceship::ConnectAPI::Token.create(
+    key_id: ENV["ASC_KEY_ID"],
+    issuer_id: ENV["ASC_ISSUER_ID"],
+    filepath: ENV["API_KEY_PATH"]
+  )
+end
+
+def fetch_distribution_certificates
+  connect_api_token
+  Spaceship::ConnectAPI.token = connect_api_token
+
+  %w[IOS_DISTRIBUTION DISTRIBUTION].flat_map do |cert_type|
+    Spaceship::ConnectAPI::Certificate.all(filter: { certificateType: cert_type })
+  end.uniq(&:id)
+rescue StandardError => e
+  UI.user_error!(
+    "Could not list distribution certificates via App Store Connect API: #{e.message}. " \
+    "Check ASC_KEY_ID, ASC_ISSUER_ID, and ASC_KEY_P8."
+  )
+end
+
+def revoke_distribution_certificates_for_ci!
+  return if ENV["IOS_DIST_CERT_P12_BASE64"].to_s.strip.length.positive?
+  return unless ENV.fetch("IOS_AUTO_REVOKE_STALE_CERTS", "true") == "true"
+
+  UI.message("No IOS_DIST_CERT_P12_BASE64 secret - ensuring room for a fresh distribution cert...")
+  certs = fetch_distribution_certificates
+
+  certs.reject(&:valid?).each do |cert|
+    UI.important("Revoking expired distribution certificate #{cert.id} (#{cert.display_name})")
+    cert.delete!
+  end
+
+  active = fetch_distribution_certificates.select(&:valid?)
+  while active.length >= APPLE_DISTRIBUTION_CERT_LIMIT
+    oldest = active.min_by { |cert| cert.expiration_date.to_s }
+    UI.important(
+      "Revoking distribution certificate #{oldest.id} (#{oldest.display_name}) " \
+      "because the Apple account is at the #{APPLE_DISTRIBUTION_CERT_LIMIT}-cert limit " \
+      "and this runner does not have the private key."
+    )
+    oldest.delete!
+    active = fetch_distribution_certificates.select(&:valid?)
+  end
+
+  if active.any?
+    UI.important(
+      "#{active.length} distribution certificate(s) remain on your Apple account. " \
+      "fastlane will create a new one if the private key is not on this runner."
+    )
+  end
+end
+
+platform :ios do
+  desc "Build and export a signed App Store IPA"
+  lane :release do
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_filepath: ENV["API_KEY_PATH"]
+    )
+
+    keychain_name = "ci-signing"
+    keychain_password = "ci-signing-pass"
+    keychain_db = File.expand_path("~/Library/Keychains/#{keychain_name}-db")
+    delete_keychain(name: keychain_name) if File.exist?(keychain_db)
+    create_keychain(
+      name: keychain_name, password: keychain_password,
+      default_keychain: true, unlock: true, timeout: 3600, lock_when_sleeps: false
+    )
+
+    p12_secret = ENV["IOS_DIST_CERT_P12_BASE64"].to_s.strip
+    if p12_secret.length.positive?
+      UI.message("Importing distribution certificate from IOS_DIST_CERT_P12_BASE64 secret...")
+      p12_path = File.join(FASTLANE_DIR, "imported_dist.p12")
+      File.binwrite(p12_path, Base64.decode64(p12_secret))
+      import_certificate(
+        certificate_path: p12_path,
+        certificate_password: cert_export_password,
+        keychain_name: keychain_name,
+        keychain_password: keychain_password
+      )
+    else
+      revoke_distribution_certificates_for_ci!
+      begin
+        cert(
+          api_key: api_key,
+          keychain_path: keychain_db,
+          keychain_password: keychain_password,
+          force: false
+        )
+      rescue StandardError => e
+        unless e.message.include?("maximum number of available Distribution certificates")
+          raise
+        end
+
+        UI.important(
+          "Apple still reports the distribution cert limit. " \
+          "Revoking all active distribution certificates and retrying once..."
+        )
+        fetch_distribution_certificates.select(&:valid?).each do |cert|
+          UI.important("Revoking distribution certificate #{cert.id} (#{cert.display_name})")
+          cert.delete!
+        end
+        cert(
+          api_key: api_key,
+          keychain_path: keychain_db,
+          keychain_password: keychain_password,
+          force: false
+        )
+      end
+      # Export for the user to save as GitHub secret so future runs reuse this cert.
+      FileUtils.mkdir_p(BUILD_DIR)
+      found = sh(
+        "security find-identity -v -p codesigning '#{keychain_db}' " \
+        "| grep -c 'Apple Distribution' || true",
+        log: false
+      ).strip
+      UI.user_error!("No Apple Distribution identity found in keychain") if found == "0"
+      sh(
+        "security export -k '#{keychain_db}' -t identities -f pkcs12 " \
+        "-P #{Shellwords.escape(cert_export_password)} " \
+        "-o #{Shellwords.escape(DIST_CERT_PATH)}"
+      )
+      encoded = Base64.strict_encode64(File.binread(DIST_CERT_PATH))
+      UI.success(
+        "Exported dist_cert.p12 (password: #{cert_export_password}). " \
+        "Download the ios-dist-cert artifact, then add GitHub secrets " \
+        "IOS_DIST_CERT_P12_BASE64 and IOS_DIST_CERT_PASSWORD=#{cert_export_password} " \
+        "so future runs reuse this cert instead of creating new ones."
+      )
+      UI.message("IOS_DIST_CERT_P12_BASE64 length for secret: #{encoded.length} chars")
+    end
+
+    sigh(api_key: api_key, app_identifier: APP_ID, platform: "ios")
+    profile_name = lane_context[SharedValues::SIGH_NAME]
+
+    update_code_signing_settings(
+      path: File.join(IOS_DIR, "Runner.xcodeproj"),
+      use_automatic_signing: false,
+      team_id: ENV["TEAM_ID"],
+      bundle_identifier: APP_ID,
+      code_sign_identity: "Apple Distribution",
+      profile_name: profile_name,
+      targets: ["Runner"]
+    )
+
+    export_plist = File.expand_path("ExportOptions.plist", FASTLANE_DIR)
+    File.write(
+      export_plist,
+      <<~PLIST,
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>method</key>
+          <string>app-store</string>
+          <key>signingStyle</key>
+          <string>manual</string>
+          <key>teamID</key>
+          <string>#{ENV['TEAM_ID']}</string>
+          <key>provisioningProfiles</key>
+          <dict>
+            <key>#{APP_ID}</key>
+            <string>#{profile_name}</string>
+          </dict>
+        </dict>
+        </plist>
+      PLIST
+    )
+
+    build_number = ENV["BUILD_NUMBER"] || "1"
+    sh(
+      "flutter build ipa --release " \
+      "--build-number=#{build_number} --build-name=1.0.0 " \
+      "--export-options-plist=#{Shellwords.escape(export_plist)}",
+      chdir: PROJECT_ROOT
+    )
+
+    ipa_files = Dir[File.join(FLUTTER_IPA_DIR, "*.ipa")]
+    if ipa_files.empty?
+      UI.user_error!(
+        "No .ipa file was found in #{FLUTTER_IPA_DIR} after flutter build ipa succeeded"
+      )
+    end
+
+    FileUtils.mkdir_p(ARTIFACT_IPA_DIR)
+    dest_ipa = File.join(ARTIFACT_IPA_DIR, "Scan2.ipa")
+    FileUtils.cp(ipa_files.first, dest_ipa)
+    UI.success("Successfully copied IPA to #{dest_ipa}")
+
+    if ENV["UPLOAD_TESTFLIGHT"] == "true"
+      upload_to_testflight(
+        api_key: api_key,
+        ipa: dest_ipa,
+        skip_waiting_for_build_processing: true
+      )
+    end
+  end
+end

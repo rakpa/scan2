@@ -1,1 +1,12 @@
-...
+# Placeholder — Android Play release is configured separately.
+# Use the iOS Release workflow for TestFlight uploads.
+name: Android Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Android release not configured yet."
