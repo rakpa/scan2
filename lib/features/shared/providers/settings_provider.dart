@@ -8,7 +8,7 @@ class AppSettings {
 
   const AppSettings({
     this.themeMode = ThemeMode.system,
-    this.autoDetectEdges = true,
+    this.autoDetectEdges = false,
     this.enhanceByDefault = true,
   });
 

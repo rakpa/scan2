@@ -33,8 +33,11 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(),
           SwitchListTile(
-            title: const Text('Auto-detect edges'),
-            subtitle: const Text('Live edge guides and auto-capture when steady'),
+            title: const Text('Auto-capture when edges lock'),
+            subtitle: const Text(
+              'Live guides are always on. Turn this on to auto-shutter when steady. '
+              'For best edges use “Scan with auto edges” (VisionKit).',
+            ),
             value: settings.autoDetectEdges,
             onChanged: notifier.setAutoDetectEdges,
           ),

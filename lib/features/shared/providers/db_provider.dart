@@ -10,12 +10,19 @@ class WebDemoRepository {
 
   List<domain.Document> getAllDocuments() => List.unmodifiable(_documents);
 
+  domain.Document? getDocument(int id) {
+    try {
+      return _documents.firstWhere((d) => d.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
   domain.Document createDocument(String title) {
     final doc = domain.Document(
       id: _nextId++,
       title: title,
       createdAt: DateTime.now(),
-      pageCount: 0,
     );
     _documents.add(doc);
     return doc;
@@ -27,10 +34,11 @@ class WebDemoRepository {
 
   void addPageToDocument(int documentId) {
     final index = _documents.indexWhere((d) => d.id == documentId);
-    if (index != -1) {
-      final old = _documents[index];
-      _documents[index] = old.copyWith(pageCount: old.pageCount + 1);
-    }
+    if (index == -1) return;
+    final old = _documents[index];
+    _documents[index] = old.copyWith(
+      pagePaths: [...old.pagePaths, 'demo_page_${old.pageCount}'],
+    );
   }
 }
 
@@ -38,7 +46,14 @@ final webDemoRepositoryProvider = Provider<WebDemoRepository>((ref) {
   return WebDemoRepository();
 });
 
-/// Main database provider — uses real Drift on mobile, in-memory demo on web
+/// Bumps when the library changes so screens rebuild.
+final libraryRevisionProvider = StateProvider<int>((ref) => 0);
+
+void bumpLibrary(WidgetRef ref) {
+  ref.read(libraryRevisionProvider.notifier).state++;
+}
+
+/// Main database provider — uses real storage on mobile, in-memory demo on web
 final appDatabaseProvider = Provider<dynamic>((ref) {
   if (kIsWeb) {
     return ref.watch(webDemoRepositoryProvider);

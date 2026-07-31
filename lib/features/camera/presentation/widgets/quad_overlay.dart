@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 
+/// Draws the live document quad. Must be a *child* of [CameraPreview] (or share
+/// the same fitted box) so normalized corners map onto preview pixels.
 class QuadOverlay extends StatelessWidget {
   final Quad quad;
   final Color color;
@@ -13,10 +15,9 @@ class QuadOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: CustomPaint(
-        painter: _QuadPainter(quad: quad, color: color),
-      ),
+    return CustomPaint(
+      painter: _QuadPainter(quad: quad, color: color),
+      child: const SizedBox.expand(),
     );
   }
 }
@@ -33,17 +34,28 @@ class _QuadPainter extends CustomPainter {
         .map((c) => Offset(c.dx * size.width, c.dy * size.height))
         .toList();
 
+    final docPath = Path()..addPolygon(points, true);
+
+    // Dim outside the document so edges read clearly.
+    final dimPath = Path()
+      ..addRect(Offset.zero & size)
+      ..addPath(docPath, Offset.zero)
+      ..fillType = PathFillType.evenOdd;
+    canvas.drawPath(
+      dimPath,
+      Paint()..color = Colors.black.withValues(alpha: 0.45),
+    );
+
     final fill = Paint()
-      ..color = color.withValues(alpha: 0.18)
+      ..color = color.withValues(alpha: 0.16)
       ..style = PaintingStyle.fill;
     final stroke = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5;
 
-    final path = Path()..addPolygon(points, true);
-    canvas.drawPath(path, fill);
-    canvas.drawPath(path, stroke);
+    canvas.drawPath(docPath, fill);
+    canvas.drawPath(docPath, stroke);
 
     final handle = Paint()..color = Colors.white;
     final handleBorder = Paint()

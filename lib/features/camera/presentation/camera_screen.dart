@@ -1,5 +1,6 @@
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,8 +9,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:scan2/features/camera/domain/camera_frame_analyzer.dart';
 import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
+import 'package:scan2/features/camera/domain/native_document_scanner.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/camera/presentation/widgets/quad_overlay.dart';
+import 'package:scan2/features/library/data/drift/database.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
 
@@ -27,11 +30,13 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   int _batchCount = 0;
   String? _cameraError;
   final ImagePicker _picker = ImagePicker();
+  final _nativeScanner = NativeDocumentScanner();
   final _frameAnalyzer = CameraFrameAnalyzer();
   DocumentEdgeTracker? _tracker;
   var _frameAnalysisBusy = false;
   var _streamActive = false;
   var _isCapturing = false;
+  var _openingNative = false;
 
   Quad _displayQuad = const Quad.centered();
   DetectionPhase _phase = DetectionPhase.looking;
@@ -40,8 +45,55 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   @override
   void initState() {
     super.initState();
+    // Live camera + edge guides first (Scanella UX). Native VisionKit is a
+    // one-tap action that returns already-cropped pages.
     if (!kIsWeb) {
-      _initCamera();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _initCamera());
+    }
+  }
+
+  Future<void> _openNativeScanner() async {
+    if (kIsWeb || _openingNative) return;
+    setState(() => _openingNative = true);
+
+    // Pause live stream so VisionKit can take the camera.
+    await _stopFrameAnalysis();
+
+    try {
+      final pages = await _nativeScanner.scan(maxPages: 24);
+      if (!mounted) return;
+
+      if (pages == null || pages.isEmpty) {
+        // Cancelled — resume live guides.
+        await _startFrameAnalysis();
+        return;
+      }
+
+      final db = ref.read(appDatabaseProvider) as AppDatabase;
+      final doc = await db.createDocumentFromScans(pages);
+      bumpLibrary(ref);
+      HapticFeedback.mediumImpact();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${pages.length} page${pages.length == 1 ? '' : 's'} '
+            'scanned with edge detection',
+          ),
+        ),
+      );
+      context.go('/library/document/${doc.id}');
+    } catch (e) {
+      debugPrint('Native scanner error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Scanner error: $e')),
+        );
+        await _startFrameAnalysis();
+      }
+    } finally {
+      if (mounted) setState(() => _openingNative = false);
     }
   }
 
@@ -99,9 +151,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
   void _startTracker() {
     _tracker?.dispose();
-    final autoDetect = ref.read(settingsProvider).autoDetectEdges;
+    final autoCapture = ref.read(settingsProvider).autoDetectEdges;
     _tracker = DocumentEdgeTracker(onStable: _onAutoCapture)
-      ..setAutoCapture(autoDetect)
+      ..setAutoCapture(autoCapture)
       ..start();
   }
 
@@ -125,14 +177,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
             detected: result.quad,
             frameConfidence: result.confidence,
           );
-          if (mounted) {
-            setState(() {
-              _displayQuad = _tracker?.quad ?? _displayQuad;
-              _phase = _tracker?.phase ?? _phase;
-              _confidence = _tracker?.confidence ?? _confidence;
-            });
-          }
-        } else if (_tracker != null && mounted) {
+        }
+        if (_tracker != null && mounted) {
           setState(() {
             _displayQuad = _tracker!.quad;
             _phase = _tracker!.phase;
@@ -199,6 +245,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       final detected = await const QuadDetector().detectQuadFromPath(file.path);
       _tracker?.lockAfterCapture(detected);
 
+      // Persist the capture so library / crop have a real image.
+      final db = ref.read(appDatabaseProvider) as AppDatabase;
+      final doc = await db.createDocumentFromScans(
+        [file.path],
+        title: 'Scan ${DateTime.now().toString().substring(0, 16)}',
+      );
+      bumpLibrary(ref);
+
       setState(() {
         _batchCount++;
         _displayQuad = detected;
@@ -216,7 +270,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
             duration: const Duration(milliseconds: 900),
           ),
         );
-        context.push('/crop', extra: null);
+        context.push('/crop', extra: doc.pagePaths.first);
       }
     } catch (e) {
       debugPrint('Capture error: $e');
@@ -231,10 +285,19 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
   Future<void> _importFromGallery() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() => _batchCount++);
-      if (mounted) context.push('/crop', extra: null);
+    if (image == null || !mounted) return;
+
+    if (!kIsWeb) {
+      final db = ref.read(appDatabaseProvider) as AppDatabase;
+      final doc = await db.createDocumentFromScans([image.path]);
+      bumpLibrary(ref);
+      if (!mounted) return;
+      context.go('/library/document/${doc.id}');
+      return;
     }
+
+    setState(() => _batchCount++);
+    context.push('/crop', extra: null);
   }
 
   void _finishBatch() {
@@ -246,7 +309,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       for (int i = 0; i < _batchCount; i++) {
         repo.addPageToDocument(doc.id);
       }
-
+      bumpLibrary(ref);
       context.go('/library');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Demo document created in browser!')),
@@ -270,16 +333,45 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   }
 
   Color get _overlayColor {
-    if (_phase == DetectionPhase.capturing || _confidence >= 0.88) {
+    if (_phase == DetectionPhase.capturing || _confidence >= 0.78) {
       return const Color(0xFF4CAF50);
     }
-    if (_confidence >= 0.62) return const Color(0xFFFFC107);
-    return const Color(0xFF90CAF9);
+    if (_confidence >= 0.5) return const Color(0xFFFFC107);
+    return const Color(0xFF4FC3F7);
+  }
+
+  /// Preview + overlay share one coordinate space (Scanella-proven layout).
+  Widget _previewWithOverlay(CameraController camera, Widget overlay) {
+    final buffer = camera.value.previewSize ?? const Size(720, 1280);
+    final portrait =
+        MediaQuery.orientationOf(context) == Orientation.portrait;
+    final shortSide = buffer.shortestSide;
+    final longSide = buffer.longestSide;
+    final size = Size(
+      portrait ? shortSide : longSide,
+      portrait ? longSide : shortSide,
+    );
+
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: CameraPreview(
+        camera,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [overlay],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!kIsWeb && _cameraError != null) {
+    if (kIsWeb) {
+      return _buildWebDemo(context);
+    }
+
+    if (_cameraError != null) {
       return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -300,7 +392,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
                 ),
                 TextButton(
                   onPressed: () => context.pop(),
-                  child: const Text('Go back', style: TextStyle(color: Colors.white70)),
+                  child: const Text(
+                    'Go back',
+                    style: TextStyle(color: Colors.white70),
+                  ),
                 ),
               ],
             ),
@@ -309,67 +404,74 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       );
     }
 
-    if (!kIsWeb && (_controller == null || !_controller!.value.isInitialized)) {
-      return const Scaffold(
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Colors.white),
+              const SizedBox(height: 16),
+              Text(
+                _openingNative
+                    ? 'Opening edge scanner…'
+                    : 'Starting camera…',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
+    final camera = _controller!;
+
     return Scaffold(
-      backgroundColor: kIsWeb ? Colors.grey[100] : Colors.black,
+      backgroundColor: Colors.black,
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          if (kIsWeb)
-            Container(
-              color: Colors.grey[300],
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.camera_alt, size: 120, color: Colors.grey),
-                    SizedBox(height: 20),
-                    Text(
-                      'Web Demo Mode\nTap shutter to simulate capture',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 18, color: Colors.black54),
-                    ),
-                  ],
+          // Critical: overlay is a child of CameraPreview inside BoxFit.cover
+          // so normalized quads land on the real document pixels.
+          SizedBox.expand(
+            child: ClipRect(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                clipBehavior: Clip.hardEdge,
+                child: _previewWithOverlay(
+                  camera,
+                  QuadOverlay(quad: _displayQuad, color: _overlayColor),
                 ),
               ),
-            )
-          else
-            CameraPreview(_controller!),
+            ),
+          ),
 
-          if (!kIsWeb)
-            QuadOverlay(quad: _displayQuad, color: _overlayColor),
-
-          if (!kIsWeb)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 64),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _phase.message,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 56),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    _phase.message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
               ),
             ),
+          ),
 
           SafeArea(
             child: Padding(
@@ -381,22 +483,22 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
                     icon: const Icon(Icons.close, color: Colors.white, size: 28),
                     onPressed: () => context.pop(),
                   ),
-                  if (!kIsWeb)
-                    IconButton(
-                      icon: Icon(
-                        _isFlashOn ? Icons.flash_on : Icons.flash_off,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                      onPressed: _toggleFlash,
-                    ),
                   IconButton(
-                    icon: const Icon(
-                      Icons.photo_library,
+                    icon: Icon(
+                      _isFlashOn ? Icons.flash_on : Icons.flash_off,
                       color: Colors.white,
                       size: 28,
                     ),
-                    onPressed: _importFromGallery,
+                    onPressed: _toggleFlash,
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.document_scanner,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                    tooltip: 'Native edge scanner',
+                    onPressed: _openingNative ? null : _openNativeScanner,
                   ),
                 ],
               ),
@@ -426,6 +528,20 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
                           style: const TextStyle(color: Colors.white),
                         ),
                       ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: _openingNative ? null : _openNativeScanner,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1565C0),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                      ),
+                      icon: const Icon(Icons.auto_fix_high),
+                      label: const Text('Scan with auto edges'),
+                    ),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -466,6 +582,81 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
                       ],
                     ),
                   ],
+                ),
+              ),
+            ),
+          ),
+
+          if (_openingNative)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 12),
+                    Text(
+                      'Opening system edge scanner…',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebDemo(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      body: Stack(
+        children: [
+          Container(
+            color: Colors.grey[300],
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.camera_alt, size: 120, color: Colors.grey),
+                  SizedBox(height: 20),
+                  Text(
+                    'Web Demo Mode\nTap shutter to simulate capture',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: IconButton(
+                icon: const Icon(Icons.close, size: 28),
+                onPressed: () => context.pop(),
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 30),
+                child: GestureDetector(
+                  onTap: () => _capture(),
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.black54, width: 4),
+                      color: Colors.white,
+                    ),
+                    child: const Icon(Icons.camera_alt, size: 36),
+                  ),
                 ),
               ),
             ),

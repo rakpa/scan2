@@ -38,8 +38,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/crop',
         builder: (context, state) {
-          final pageId = state.extra as int?;
-          return CropScreen(pageId: pageId);
+          final extra = state.extra;
+          final imagePath = extra is String ? extra : null;
+          final pageId = extra is int ? extra : null;
+          return CropScreen(pageId: pageId, imagePath: imagePath);
         },
       ),
       GoRoute(

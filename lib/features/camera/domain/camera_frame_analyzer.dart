@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 
-import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
 import 'package:scan2/features/camera/domain/document_quad_detector.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 
@@ -23,7 +22,7 @@ class CameraFrameAnalyzer {
   CameraFrameAnalyzer();
 
   static const _minInterval = Duration(milliseconds: 100);
-  static const _analysisWidth = 160;
+  static const _analysisWidth = 240;
 
   final _detector = const QuadDetector();
   DateTime? _lastProcessed;
@@ -52,11 +51,6 @@ class CameraFrameAnalyzer {
     final detection =
         _detector.detectFromLuminance(grid.bytes, grid.width, grid.height);
     if (detection == null) {
-      return const FrameDetectionResult(quad: null, confidence: 0);
-    }
-
-    // Reject low-quality hits so the live overlay / auto-capture stay calm.
-    if (detection.confidence < DocumentEdgeTracker.minAcceptedConfidence) {
       return const FrameDetectionResult(quad: null, confidence: 0);
     }
 
