@@ -1,11 +1,17 @@
-# Signed App Store .ipa for the Flutter app — built entirely on CI (no Mac).
+# Signed App Store .ipa — builds on CI (no Mac).
 #
-# Repo secrets (same values across all your apps): APPLE_TEAM_ID, ASC_KEY_ID,
-# ASC_ISSUER_ID, ASC_KEY_P8. Optional after first successful build:
-# IOS_DIST_CERT_P12_BASE64, IOS_DIST_CERT_PASSWORD (reuse cert, avoid Apple limit).
+# Auto-uploads when a commit/PR message contains [testflight].
+# Also supports manual workflow_dispatch.
+#
+# Secrets (same across your apps): APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8.
+# Optional: IOS_DIST_CERT_P12_BASE64, IOS_DIST_CERT_PASSWORD.
 name: iOS Release (signed IPA)
 
 on:
+  push:
+    branches: [main, 'cursor/**']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       build_number:
@@ -19,6 +25,12 @@ on:
 
 jobs:
   release:
+    # Only run when manually dispatched OR commit/PR title+body contains [testflight]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[testflight]') ||
+      contains(github.event.pull_request.title, '[testflight]') ||
+      contains(github.event.pull_request.body, '[testflight]')
     runs-on: macos-15
     timeout-minutes: 60
     env:
@@ -26,8 +38,8 @@ jobs:
       TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-      BUILD_NUMBER: ${{ inputs.build_number }}
-      UPLOAD_TESTFLIGHT: ${{ inputs.upload_to_testflight }}
+      BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+      UPLOAD_TESTFLIGHT: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_testflight || true }}
 
     steps:
       - uses: actions/checkout@v4
@@ -97,8 +109,3 @@ jobs:
           name: ios-ipa
           path: build/ipa/*.ipa
           if-no-files-found: error
-
-      - name: TestFlight upload reminder
-        if: success() && inputs.upload_to_testflight != true
-        run: |
-          echo "::warning::TestFlight upload was SKIPPED. The IPA is only in GitHub Actions artifacts."
