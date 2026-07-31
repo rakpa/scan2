@@ -30,7 +30,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     env:
-      BUNDLE_ID: com.scan2.scan2
+      BUNDLE_ID: com.scanella.mobile
       TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}

@@ -16,7 +16,7 @@ FLUTTER_IPA_DIR = File.join(BUILD_DIR, "ios", "ipa")
 ARTIFACT_IPA_DIR = File.join(BUILD_DIR, "ipa")
 DIST_CERT_PATH = File.join(BUILD_DIR, "dist_cert.p12")
 
-APP_ID = ENV["BUNDLE_ID"] || "com.scan2.scan2"
+APP_ID = ENV["BUNDLE_ID"] || "com.scanella.mobile"
 
 def cert_export_password
   pwd = ENV["IOS_DIST_CERT_PASSWORD"].to_s.strip
@@ -261,11 +261,18 @@ platform :ios do
     UI.success("Successfully copied IPA to #{dest_ipa}")
 
     if ENV["UPLOAD_TESTFLIGHT"] == "true"
-      upload_to_testflight(
-        api_key: api_key,
-        ipa: dest_ipa,
-        skip_waiting_for_build_processing: true
-      )
+      begin
+        upload_to_testflight(
+          api_key: api_key,
+          ipa: dest_ipa,
+          skip_waiting_for_build_processing: true
+        )
+      rescue StandardError => e
+        UI.user_error!(
+          "TestFlight upload failed: #{e.message}. " \
+          "IPA is still at #{dest_ipa} — download the ios-ipa artifact."
+        )
+      end
     end
   end
 end
