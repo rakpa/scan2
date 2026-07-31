@@ -10,8 +10,6 @@ name: iOS Release (signed IPA)
 on:
   push:
     branches: [main, 'cursor/**']
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       build_number:
@@ -25,12 +23,10 @@ on:
 
 jobs:
   release:
-    # Only run when manually dispatched OR commit/PR title+body contains [testflight]
+    # Manual dispatch, or commit message contains [testflight]
     if: |
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.head_commit.message, '[testflight]') ||
-      contains(github.event.pull_request.title, '[testflight]') ||
-      contains(github.event.pull_request.body, '[testflight]')
+      contains(github.event.head_commit.message, '[testflight]')
     runs-on: macos-15
     timeout-minutes: 60
     env:

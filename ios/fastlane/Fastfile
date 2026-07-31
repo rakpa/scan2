@@ -164,15 +164,25 @@ platform :ios do
 
     # Register App ID + App Store Connect record if missing (API-key auth).
     begin
-      Spaceship::ConnectAPI.token = api_key
-      existing = Spaceship::ConnectAPI::BundleId.all.find { |b| b.identifier == APP_ID }
+      token = Spaceship::ConnectAPI::Token.create(
+        key_id: ENV.fetch("ASC_KEY_ID"),
+        issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+        filepath: ENV.fetch("API_KEY_PATH")
+      )
+      Spaceship::ConnectAPI.token = token
+
+      existing = Spaceship::ConnectAPI::BundleId.all(
+        filter: { identifier: APP_ID }
+      ).first
       unless existing
         UI.message("Creating App ID #{APP_ID} on the Developer Portal...")
         Spaceship::ConnectAPI::BundleId.create(
           name: "Scan2",
           identifier: APP_ID,
-          platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS
+          platform: "IOS"
         )
+      else
+        UI.message("App ID #{APP_ID} already exists")
       end
 
       unless Spaceship::ConnectAPI::App.find(APP_ID)
@@ -185,9 +195,12 @@ platform :ios do
           bundle_id: APP_ID,
           platforms: ["IOS"]
         )
+      else
+        UI.message("App Store Connect app #{APP_ID} already exists")
       end
     rescue StandardError => e
-      UI.important("App registration step: #{e.message}")
+      UI.important("App registration step: #{e.class}: #{e.message}")
+      UI.important(e.backtrace&.first(5)&.join("\n"))
     end
 
     sigh(api_key: api_key, app_identifier: APP_ID, platform: "ios")
