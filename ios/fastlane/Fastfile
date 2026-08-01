@@ -240,10 +240,20 @@ platform :ios do
       PLIST
     )
 
-    build_number = ENV["BUILD_NUMBER"] || "1"
+    build_number = ENV["BUILD_NUMBER"].to_s.strip
+    build_name = ENV["BUILD_NAME"].to_s.strip
+    if build_number.empty? || build_name.empty?
+      pubspec = File.read(File.join(PROJECT_ROOT, "pubspec.yaml"))
+      match = pubspec.match(/^version:\s*([0-9.]+)\+([0-9]+)/)
+      UI.user_error!("Could not parse version from pubspec.yaml") unless match
+      build_name = build_name.empty? ? match[1] : build_name
+      build_number = build_number.empty? ? match[2] : build_number
+    end
+    UI.important("Building #{APP_ID} #{build_name} (#{build_number})")
+
     sh(
       "flutter build ipa --release " \
-      "--build-number=#{build_number} --build-name=1.0.0 " \
+      "--build-number=#{build_number} --build-name=#{build_name} " \
       "--export-options-plist=#{Shellwords.escape(export_plist)}",
       chdir: PROJECT_ROOT
     )
@@ -262,14 +272,23 @@ platform :ios do
 
     if ENV["UPLOAD_TESTFLIGHT"] == "true"
       begin
+        # Wait for ASC processing so CI fails if Apple rejects the binary
+        # (e.g. build number lower than an already-shipped TestFlight build).
         upload_to_testflight(
           api_key: api_key,
           ipa: dest_ipa,
-          skip_waiting_for_build_processing: true
+          skip_waiting_for_build_processing: false,
+          distribute_external: false,
+          notify_external_testers: false,
+          changelog: "Build #{build_number} (#{build_name})"
+        )
+        UI.success(
+          "TestFlight build #{build_name} (#{build_number}) finished processing " \
+          "and is ready for internal testing."
         )
       rescue StandardError => e
         UI.user_error!(
-          "TestFlight upload failed: #{e.message}. " \
+          "TestFlight upload/processing failed: #{e.message}. " \
           "IPA is still at #{dest_ipa} — download the ios-ipa artifact."
         )
       end
