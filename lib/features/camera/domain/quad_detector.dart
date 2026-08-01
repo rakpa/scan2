@@ -27,6 +27,14 @@ class Quad {
         bottomRight = const Offset(0.88, 0.82),
         bottomLeft = const Offset(0.12, 0.82);
 
+  /// Full-bleed rectangle — used when edges were already applied by the
+  /// native scanner (VisionKit / ML Kit).
+  const Quad.fullFrame()
+      : topLeft = Offset.zero,
+        topRight = const Offset(1, 0),
+        bottomRight = const Offset(1, 1),
+        bottomLeft = const Offset(0, 1);
+
   factory Quad.fromCorners(List<Offset> corners) {
     assert(corners.length == 4);
     final ordered = DocumentQuadDetector.orderCorners(corners);

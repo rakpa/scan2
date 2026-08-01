@@ -13,6 +13,14 @@ void main() {
       expect(q.bottomRight.dx, greaterThan(0.8));
     });
 
+    test('fullFrame covers the entire image', () {
+      const q = Quad.fullFrame();
+      expect(q.topLeft, Offset.zero);
+      expect(q.topRight, const Offset(1, 0));
+      expect(q.bottomRight, const Offset(1, 1));
+      expect(q.bottomLeft, const Offset(0, 1));
+    });
+
     test('lerp moves corners', () {
       const a = Quad.centered();
       final b = a.copyWith(topLeft: const Offset(0.2, 0.2));

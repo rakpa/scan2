@@ -28,6 +28,14 @@ class _DraggableQuadState extends State<DraggableQuad> {
     _quad = widget.initialQuad;
   }
 
+  @override
+  void didUpdateWidget(covariant DraggableQuad oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialQuad != widget.initialQuad) {
+      _quad = widget.initialQuad;
+    }
+  }
+
   Offset _toLocal(Offset normalized) => Offset(
         normalized.dx * widget.size.width,
         normalized.dy * widget.size.height,

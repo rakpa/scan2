@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:scan2/features/camera/presentation/camera_screen.dart';
 import 'package:scan2/features/library/presentation/library_screen.dart';
 import 'package:scan2/features/library/presentation/document_detail_screen.dart';
+import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/crop/presentation/crop_screen.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
 import 'package:scan2/features/shared/providers/onboarding_provider.dart';
@@ -39,6 +40,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/crop',
         builder: (context, state) {
           final extra = state.extra;
+          if (extra is CropArgs) {
+            return CropScreen.fromArgs(extra);
+          }
           final imagePath = extra is String ? extra : null;
           final pageId = extra is int ? extra : null;
           return CropScreen(pageId: pageId, imagePath: imagePath);

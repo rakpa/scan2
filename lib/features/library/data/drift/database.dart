@@ -31,10 +31,14 @@ class AppDatabase {
     return doc;
   }
 
-  /// Imports VisionKit / ML Kit cropped page paths into a new document.
+  /// Imports scanner page paths into a new document.
+  ///
+  /// Set [edgesAlreadyApplied] for VisionKit / ML Kit results that are already
+  /// perspective-cropped so crop UI can skip manual edge handles.
   Future<Document> createDocumentFromScans(
     List<String> sourcePaths, {
     String? title,
+    bool edgesAlreadyApplied = false,
   }) async {
     if (sourcePaths.isEmpty) {
       throw ArgumentError('sourcePaths must not be empty');
@@ -60,9 +64,31 @@ class AppDatabase {
       title: title ?? _defaultTitle(now),
       createdAt: now,
       pagePaths: stored,
+      edgesAlreadyApplied: edgesAlreadyApplied,
     );
     _docs.insert(0, doc);
     return doc;
+  }
+
+  /// Overwrites an existing page image (e.g. after crop + filter save).
+  Future<Document?> replacePageBytes({
+    required int documentId,
+    required String pagePath,
+    required List<int> bytes,
+  }) async {
+    final index = _docs.indexWhere((d) => d.id == documentId);
+    if (index == -1) return null;
+
+    await _storage.writePageBytes(pagePath: pagePath, bytes: bytes);
+    return _docs[index];
+  }
+
+  /// Finds the document that owns [pagePath], if any.
+  Future<Document?> findDocumentByPagePath(String pagePath) async {
+    for (final doc in _docs) {
+      if (doc.pagePaths.contains(pagePath)) return doc;
+    }
+    return null;
   }
 
   Future<void> deleteDocument(int id) async {
