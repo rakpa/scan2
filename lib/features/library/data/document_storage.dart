@@ -35,6 +35,15 @@ class DocumentStorage {
     return destPath;
   }
 
+  Future<void> writePageBytes({
+    required String pagePath,
+    required List<int> bytes,
+  }) async {
+    final file = File(pagePath);
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(bytes, flush: true);
+  }
+
   Future<void> deleteDocumentFiles(String documentId) async {
     final root = await _documentsRoot();
     final docDir = Directory(p.join(root.path, documentId));

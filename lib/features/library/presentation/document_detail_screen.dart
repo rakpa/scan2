@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/library/data/drift/database.dart' as drift_db;
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
@@ -69,7 +70,14 @@ class DocumentDetailScreen extends ConsumerWidget {
                     return Card(
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
-                        onTap: () => context.push('/crop', extra: path),
+                        onTap: () => context.push(
+                          '/crop',
+                          extra: CropArgs(
+                            imagePath: path,
+                            edgesAlreadyApplied:
+                                doc?.edgesAlreadyApplied ?? false,
+                          ),
+                        ),
                         child: Column(
                           children: [
                             Expanded(

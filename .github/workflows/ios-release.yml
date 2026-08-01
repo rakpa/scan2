@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       build_number:
-        description: 'Build number (CFBundleVersion). Bump for every upload.'
+        description: 'Override CFBundleVersion (leave empty to use pubspec.yaml +N)'
         type: string
-        default: '1'
+        default: ''
       upload_to_testflight:
         description: 'Also upload to TestFlight'
         type: boolean
@@ -28,17 +28,36 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.head_commit.message, '[testflight]')
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       BUNDLE_ID: com.scanella.mobile
       TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-      BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
       UPLOAD_TESTFLIGHT: ${{ github.event_name == 'workflow_dispatch' && inputs.upload_to_testflight || true }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve version from pubspec.yaml
+        id: version
+        env:
+          BUILD_OVERRIDE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_number || '' }}
+        run: |
+          set -euo pipefail
+          VER="$(grep -E '^version:' pubspec.yaml | awk '{print $2}' | tr -d "'" | tr -d '"')"
+          NAME="${VER%%+*}"
+          BUILD="${VER##*+}"
+          if [[ -n "${BUILD_OVERRIDE}" ]]; then
+            BUILD="${BUILD_OVERRIDE}"
+          fi
+          if [[ -z "$BUILD" || -z "$NAME" ]]; then
+            echo "::error::Could not resolve version from pubspec ($VER)"
+            exit 1
+          fi
+          echo "build_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "Resolved App Store version $NAME ($BUILD)"
 
       - name: Use newest Xcode (App Store requires the iOS 26 SDK / Xcode 26+)
         run: |
@@ -84,6 +103,8 @@ jobs:
         working-directory: ios
         run: fastlane ios release
         env:
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          BUILD_NAME: ${{ steps.version.outputs.build_name }}
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_DISABLE_COLORS: '1'
           IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}

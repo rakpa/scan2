@@ -12,6 +12,7 @@ import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
 import 'package:scan2/features/camera/domain/native_document_scanner.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/camera/presentation/widgets/quad_overlay.dart';
+import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/library/data/drift/database.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
@@ -70,7 +71,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       }
 
       final db = ref.read(appDatabaseProvider) as AppDatabase;
-      final doc = await db.createDocumentFromScans(pages);
+      final doc = await db.createDocumentFromScans(
+        pages,
+        edgesAlreadyApplied: true,
+      );
       bumpLibrary(ref);
       HapticFeedback.mediumImpact();
 
@@ -83,7 +87,18 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
           ),
         ),
       );
+      // Land on the document, then open enhance (edges already applied).
       context.go('/library/document/${doc.id}');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.push(
+          '/crop',
+          extra: CropArgs(
+            imagePath: doc.pagePaths.first,
+            edgesAlreadyApplied: true,
+          ),
+        );
+      });
     } catch (e) {
       debugPrint('Native scanner error: $e');
       if (mounted) {
@@ -250,6 +265,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       final doc = await db.createDocumentFromScans(
         [file.path],
         title: 'Scan ${DateTime.now().toString().substring(0, 16)}',
+        edgesAlreadyApplied: false,
       );
       bumpLibrary(ref);
 
@@ -270,7 +286,14 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
             duration: const Duration(milliseconds: 900),
           ),
         );
-        context.push('/crop', extra: doc.pagePaths.first);
+        context.push(
+          '/crop',
+          extra: CropArgs(
+            imagePath: doc.pagePaths.first,
+            initialQuad: detected,
+            edgesAlreadyApplied: false,
+          ),
+        );
       }
     } catch (e) {
       debugPrint('Capture error: $e');
@@ -289,10 +312,19 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
     if (!kIsWeb) {
       final db = ref.read(appDatabaseProvider) as AppDatabase;
-      final doc = await db.createDocumentFromScans([image.path]);
+      final doc = await db.createDocumentFromScans(
+        [image.path],
+        edgesAlreadyApplied: false,
+      );
       bumpLibrary(ref);
       if (!mounted) return;
-      context.go('/library/document/${doc.id}');
+      context.push(
+        '/crop',
+        extra: CropArgs(
+          imagePath: doc.pagePaths.first,
+          edgesAlreadyApplied: false,
+        ),
+      );
       return;
     }
 
