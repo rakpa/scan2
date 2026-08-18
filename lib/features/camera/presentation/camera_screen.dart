@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
@@ -12,10 +14,19 @@ import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
 import 'package:scan2/features/camera/domain/native_document_scanner.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/camera/presentation/widgets/quad_overlay.dart';
-import 'package:scan2/features/crop/domain/crop_args.dart';
-import 'package:scan2/features/library/data/drift/database.dart';
+import 'package:scan2/features/crop/domain/image_processor.dart';
+import 'package:scan2/features/crop/domain/page_processor.dart';
+import 'package:scan2/features/library/data/document_store.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
+
+/// A page captured in the current session, held until the batch is finished.
+class _PendingPage {
+  _PendingPage({required this.originalPath, required this.processed});
+
+  final String originalPath;
+  final ProcessedCapture processed;
+}
 
 class CameraScreen extends ConsumerStatefulWidget {
   const CameraScreen({super.key});
@@ -24,112 +35,101 @@ class CameraScreen extends ConsumerStatefulWidget {
   ConsumerState<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends ConsumerState<CameraScreen> {
+class _CameraScreenState extends ConsumerState<CameraScreen>
+    with WidgetsBindingObserver {
   CameraController? _controller;
-  CameraDescription? _activeCamera;
-  bool _isFlashOn = false;
-  int _batchCount = 0;
-  String? _cameraError;
-  final ImagePicker _picker = ImagePicker();
-  final _nativeScanner = NativeDocumentScanner();
-  final _frameAnalyzer = CameraFrameAnalyzer();
+  CameraDescription? _camera;
   DocumentEdgeTracker? _tracker;
-  var _frameAnalysisBusy = false;
-  var _streamActive = false;
-  var _isCapturing = false;
-  var _openingNative = false;
+  final _analyzer = CameraFrameAnalyzer();
+  final _picker = ImagePicker();
+  final _nativeScanner = NativeDocumentScanner();
+  final _processor = const PageProcessor();
 
-  Quad _displayQuad = const Quad.centered();
-  DetectionPhase _phase = DetectionPhase.looking;
-  double _confidence = 0;
+  final List<_PendingPage> _batch = [];
+  String? _cameraError;
+  bool _isFlashOn = false;
+  bool _streaming = false;
+  bool _capturing = false;
+  bool _openingNative = false;
+  bool _analyzing = false;
+  int _processingCount = 0;
+
+  /// Drives the white flash played over the preview on capture.
+  final ValueNotifier<double> _shutterFlash = ValueNotifier(0);
+  Timer? _flashTimer;
 
   @override
   void initState() {
     super.initState();
-    // Live camera + edge guides first (Scanella UX). Native VisionKit is a
-    // one-tap action that returns already-cropped pages.
+    WidgetsBinding.instance.addObserver(this);
     if (!kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _initCamera());
     }
   }
 
-  Future<void> _openNativeScanner() async {
-    if (kIsWeb || _openingNative) return;
-    setState(() => _openingNative = true);
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _flashTimer?.cancel();
+    _shutterFlash.dispose();
+    _tracker?.dispose();
+    _analyzer.dispose();
+    _disposeController();
+    super.dispose();
+  }
 
-    // Pause live stream so VisionKit can take the camera.
-    await _stopFrameAnalysis();
+  // -------------------------------------------------------------------------
+  // Lifecycle
+  // -------------------------------------------------------------------------
 
-    try {
-      final pages = await _nativeScanner.scan(maxPages: 24);
-      if (!mounted) return;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
 
-      if (pages == null || pages.isEmpty) {
-        // Cancelled — resume live guides.
-        await _startFrameAnalysis();
-        return;
-      }
-
-      final db = ref.read(appDatabaseProvider) as AppDatabase;
-      final doc = await db.createDocumentFromScans(
-        pages,
-        edgesAlreadyApplied: true,
-      );
-      bumpLibrary(ref);
-      HapticFeedback.mediumImpact();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${pages.length} page${pages.length == 1 ? '' : 's'} '
-            'scanned with edge detection',
-          ),
-        ),
-      );
-      // Land on the document, then open enhance (edges already applied).
-      context.go('/library/document/${doc.id}');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        context.push(
-          '/crop',
-          extra: CropArgs(
-            imagePath: doc.pagePaths.first,
-            edgesAlreadyApplied: true,
-          ),
-        );
-      });
-    } catch (e) {
-      debugPrint('Native scanner error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scanner error: $e')),
-        );
-        await _startFrameAnalysis();
-      }
-    } finally {
-      if (mounted) setState(() => _openingNative = false);
+    // The OS revokes the camera when the app leaves the foreground. Without
+    // this the preview comes back as a frozen black rectangle, which is the
+    // most common way a camera screen "breaks" in the wild.
+    switch (state) {
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        _tracker?.stop();
+        _stopStream();
+        _disposeController();
+        if (mounted) setState(() {});
+      case AppLifecycleState.resumed:
+        _initCamera();
     }
   }
 
+  void _disposeController() {
+    final controller = _controller;
+    _controller = null;
+    if (controller == null) return;
+    controller.dispose().catchError((_) {});
+  }
+
+  // -------------------------------------------------------------------------
+  // Camera setup
+  // -------------------------------------------------------------------------
+
   Future<void> _initCamera() async {
+    if (_controller != null) return;
     try {
-      final granted = await Permission.camera.request();
-      if (!granted.isGranted) {
-        if (mounted) {
-          setState(() {
-            _cameraError =
-                'Camera permission is required to scan documents.';
-          });
-        }
+      final permission = await Permission.camera.request();
+      if (!permission.isGranted) {
+        if (!mounted) return;
+        setState(() => _cameraError =
+            'Scan2 needs camera access to scan documents.');
         return;
       }
 
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
-        if (mounted) {
-          setState(() => _cameraError = 'No camera found on this device.');
-        }
+        if (!mounted) return;
+        setState(() => _cameraError = 'No camera found on this device.');
         return;
       }
 
@@ -137,7 +137,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
-      _activeCamera = back;
 
       final controller = CameraController(
         back,
@@ -150,14 +149,22 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
       await controller.initialize();
       await controller.setFocusMode(FocusMode.auto);
       await controller.setExposureMode(ExposureMode.auto);
+
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
       _controller = controller;
+      _camera = back;
+      _cameraError = null;
 
+      await _analyzer.ensureStarted();
       _startTracker();
-      await _startFrameAnalysis();
-
+      await _startStream();
       if (mounted) setState(() {});
     } catch (e) {
-      debugPrint('Camera init error: $e');
+      debugPrint('Camera init failed: $e');
       if (mounted) {
         setState(() => _cameraError = 'Camera failed to start: $e');
       }
@@ -166,534 +173,831 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
   void _startTracker() {
     _tracker?.dispose();
-    final autoCapture = ref.read(settingsProvider).autoDetectEdges;
-    _tracker = DocumentEdgeTracker(onStable: _onAutoCapture)
-      ..setAutoCapture(autoCapture)
+    final tracker = DocumentEdgeTracker(onAutoCapture: _onAutoCapture)
+      ..setAutoCapture(ref.read(settingsProvider).autoCapture)
       ..start();
+    _tracker = tracker;
   }
 
-  Future<void> _startFrameAnalysis() async {
+  Future<void> _startStream() async {
     final controller = _controller;
-    final camera = _activeCamera;
+    final camera = _camera;
     if (controller == null ||
-        !controller.value.isInitialized ||
         camera == null ||
-        _streamActive) {
+        !controller.value.isInitialized ||
+        _streaming) {
       return;
     }
 
+    _streaming = true;
     await controller.startImageStream((image) {
-      if (_frameAnalysisBusy || _isCapturing) return;
-      _frameAnalysisBusy = true;
-      try {
-        final result = _frameAnalyzer.analyzeThrottled(image, camera);
-        if (result != null) {
-          _tracker?.updateFromFrame(
-            detected: result.quad,
-            frameConfidence: result.confidence,
-          );
-        }
-        if (_tracker != null && mounted) {
-          setState(() {
-            _displayQuad = _tracker!.quad;
-            _phase = _tracker!.phase;
-            _confidence = _tracker!.confidence;
-          });
-        }
-      } catch (e, st) {
-        debugPrint('Frame analysis failed: $e\n$st');
-      } finally {
-        _frameAnalysisBusy = false;
-      }
+      // Frames arrive faster than detection completes; skipping is correct.
+      // Queueing would show the user edges from half a second ago.
+      if (_analyzing || _capturing || !mounted) return;
+      _analyzing = true;
+
+      final orientation = _deviceOrientationDegrees(controller);
+      _analyzer.analyze(image, camera, orientation).then((result) {
+        if (!mounted || result == null) return;
+        _tracker?.updateFromFrame(
+          detected: result.quad,
+          confidence: result.confidence,
+        );
+      }).catchError((Object e) {
+        debugPrint('Frame analysis failed: $e');
+      }).whenComplete(() => _analyzing = false);
     });
-    _streamActive = true;
   }
 
-  Future<void> _stopFrameAnalysis() async {
+  Future<void> _stopStream() async {
     final controller = _controller;
-    if (controller == null || !_streamActive) {
-      _streamActive = false;
+    if (controller == null || !_streaming) {
+      _streaming = false;
       return;
     }
+    _streaming = false;
     try {
       await controller.stopImageStream();
-    } catch (_) {}
-    _streamActive = false;
+    } catch (_) {
+      // Already stopped, or the controller is going away.
+    }
   }
 
-  Future<void> _onAutoCapture() async {
-    await _capture(fromAuto: true);
+  int _deviceOrientationDegrees(CameraController controller) {
+    return switch (controller.value.deviceOrientation) {
+      DeviceOrientation.portraitUp => 0,
+      DeviceOrientation.landscapeRight => 90,
+      DeviceOrientation.portraitDown => 180,
+      DeviceOrientation.landscapeLeft => 270,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Capture
+  // -------------------------------------------------------------------------
+
+  Future<void> _onAutoCapture() => _capture(automatic: true);
+
+  Future<void> _capture({bool automatic = false}) async {
+    if (kIsWeb || _capturing) return;
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    final tracker = _tracker;
+    _capturing = true;
+    final quadAtCapture = tracker?.value.quad;
+
+    try {
+      await _stopStream();
+      final file = await controller.takePicture();
+      _playShutter();
+
+      tracker?.lockAfterCapture(quadAtCapture ?? const Quad.centered());
+
+      // Restart the preview immediately; processing continues in the
+      // background so the next page can be framed while this one renders.
+      unawaited(_startStream());
+
+      setState(() => _processingCount++);
+      final processed = await _processor.process(
+        imagePath: file.path,
+        adjustments: _captureAdjustments(),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _processingCount--;
+        _batch.add(_PendingPage(
+          originalPath: file.path,
+          processed: processed,
+        ));
+      });
+    } catch (e) {
+      debugPrint('Capture failed: $e');
+      tracker?.releaseCaptureLock();
+      if (mounted) {
+        setState(() =>
+            _processingCount = _processingCount > 0 ? _processingCount - 1 : 0);
+        _showMessage('Capture failed. Try again.');
+        unawaited(_startStream());
+      }
+    } finally {
+      _capturing = false;
+    }
+  }
+
+  void _playShutter() {
+    HapticFeedback.mediumImpact();
+    if (ref.read(settingsProvider).shutterSound) {
+      SystemSound.play(SystemSoundType.click);
+    }
+    _flashTimer?.cancel();
+    _shutterFlash.value = 1;
+    _flashTimer = Timer(const Duration(milliseconds: 120), () {
+      _shutterFlash.value = 0;
+    });
+  }
+
+  Future<void> _tapToFocus(TapDownDetails details, Size previewSize) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    final point = Offset(
+      (details.localPosition.dx / previewSize.width).clamp(0.0, 1.0),
+      (details.localPosition.dy / previewSize.height).clamp(0.0, 1.0),
+    );
+    try {
+      await controller.setFocusPoint(point);
+      await controller.setExposurePoint(point);
+      HapticFeedback.selectionClick();
+    } catch (_) {
+      // Not every device exposes focus points.
+    }
   }
 
   Future<void> _toggleFlash() async {
-    if (_controller == null || kIsWeb) return;
-    _isFlashOn = !_isFlashOn;
-    await _controller!.setFlashMode(
-      _isFlashOn ? FlashMode.torch : FlashMode.off,
-    );
-    setState(() {});
+    final controller = _controller;
+    if (controller == null || kIsWeb) return;
+    final next = !_isFlashOn;
+    try {
+      await controller.setFlashMode(next ? FlashMode.torch : FlashMode.off);
+      setState(() => _isFlashOn = next);
+    } catch (e) {
+      debugPrint('Flash unavailable: $e');
+    }
   }
 
-  Future<void> _capture({bool fromAuto = false}) async {
-    if (kIsWeb) {
-      HapticFeedback.mediumImpact();
-      setState(() => _batchCount++);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Demo: Page $_batchCount captured (web mock)'),
-          ),
-        );
-      }
+  // -------------------------------------------------------------------------
+  // Batch actions
+  // -------------------------------------------------------------------------
+
+  Future<void> _finishBatch() async {
+    if (_batch.isEmpty) {
+      context.pop();
+      return;
+    }
+    if (_processingCount > 0) {
+      _showMessage('Finishing the last page…');
       return;
     }
 
-    if (_isCapturing) return;
-    if (_controller == null || !_controller!.value.isInitialized) return;
-
-    _isCapturing = true;
-    try {
-      await _stopFrameAnalysis();
-      final XFile file = await _controller!.takePicture();
-      HapticFeedback.mediumImpact();
-
-      final detected = await const QuadDetector().detectQuadFromPath(file.path);
-      _tracker?.lockAfterCapture(detected);
-
-      // Persist the capture so library / crop have a real image.
-      final db = ref.read(appDatabaseProvider) as AppDatabase;
-      final doc = await db.createDocumentFromScans(
-        [file.path],
-        title: 'Scan ${DateTime.now().toString().substring(0, 16)}',
-        edgesAlreadyApplied: false,
-      );
-      bumpLibrary(ref);
-
-      setState(() {
-        _batchCount++;
-        _displayQuad = detected;
-        _phase = DetectionPhase.pageCaptured;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              fromAuto
-                  ? 'Auto-scanned page $_batchCount'
-                  : 'Page $_batchCount captured',
-            ),
-            duration: const Duration(milliseconds: 900),
-          ),
-        );
-        context.push(
-          '/crop',
-          extra: CropArgs(
-            imagePath: doc.pagePaths.first,
-            initialQuad: detected,
-            edgesAlreadyApplied: false,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Capture error: $e');
-      _tracker?.releaseCaptureLock();
-    } finally {
-      _isCapturing = false;
-      if (mounted && _controller != null && _controller!.value.isInitialized) {
-        await _startFrameAnalysis();
-      }
+    final repository = ref.read(documentRepositoryProvider);
+    if (repository is! DocumentStore) {
+      context.go('/library');
+      return;
     }
-  }
 
-  Future<void> _importFromGallery() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image == null || !mounted) return;
-
-    if (!kIsWeb) {
-      final db = ref.read(appDatabaseProvider) as AppDatabase;
-      final doc = await db.createDocumentFromScans(
-        [image.path],
-        edgesAlreadyApplied: false,
+    try {
+      final doc = await repository.createProcessedDocument(
+        pages: [
+          for (final page in _batch)
+            ProcessedPage(
+              originalPath: page.originalPath,
+              bytes: page.processed.bytes,
+              quad: page.processed.quad,
+              adjustments: page.processed.adjustments,
+            ),
+        ],
       );
       bumpLibrary(ref);
       if (!mounted) return;
-      context.push(
-        '/crop',
-        extra: CropArgs(
-          imagePath: doc.pagePaths.first,
-          edgesAlreadyApplied: false,
-        ),
-      );
-      return;
+      context.go('/library/document/${doc.id}');
+    } catch (e) {
+      debugPrint('Saving batch failed: $e');
+      if (mounted) _showMessage('Could not save the scan: $e');
     }
-
-    setState(() => _batchCount++);
-    context.push('/crop', extra: null);
   }
 
-  void _finishBatch() {
+  void _discardLastPage() {
+    if (_batch.isEmpty) return;
+    setState(() => _batch.removeLast());
+    HapticFeedback.selectionClick();
+  }
+
+  Future<void> _importFromGallery() async {
+    final picked = await _picker.pickImage(source: ImageSource.gallery);
+    if (picked == null || !mounted) return;
+
     if (kIsWeb) {
-      final repo = ref.read(webDemoRepositoryProvider);
-      final doc = repo.createDocument(
-        'Scan ${DateTime.now().toString().substring(0, 16)}',
-      );
-      for (int i = 0; i < _batchCount; i++) {
-        repo.addPageToDocument(doc.id);
-      }
-      bumpLibrary(ref);
-      context.go('/library');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Demo document created in browser!')),
-      );
+      _showMessage('Import is available on device.');
       return;
     }
-    context.go('/library');
-  }
 
-  @override
-  void dispose() {
-    _tracker?.dispose();
-    final controller = _controller;
-    if (controller != null) {
-      if (_streamActive) {
-        controller.stopImageStream().catchError((_) {});
+    setState(() => _processingCount++);
+    try {
+      final processed = await _processor.process(
+        imagePath: picked.path,
+        adjustments: _captureAdjustments(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _processingCount--;
+        _batch.add(
+          _PendingPage(originalPath: picked.path, processed: processed),
+        );
+      });
+    } catch (e) {
+      debugPrint('Import failed: $e');
+      if (mounted) {
+        setState(() => _processingCount--);
+        _showMessage('Could not import that image.');
       }
-      controller.dispose();
     }
-    super.dispose();
   }
 
-  Color get _overlayColor {
-    if (_phase == DetectionPhase.capturing || _confidence >= 0.78) {
-      return const Color(0xFF4CAF50);
+  Future<void> _openNativeScanner() async {
+    if (kIsWeb || _openingNative) return;
+    setState(() => _openingNative = true);
+    await _stopStream();
+
+    try {
+      final pages = await _nativeScanner.scan();
+      if (!mounted) return;
+
+      if (pages == null || pages.isEmpty) {
+        await _startStream();
+        return;
+      }
+
+      final repository = ref.read(documentRepositoryProvider);
+      final doc = await repository.createDocumentFromScans(
+        pages,
+        edgesAlreadyApplied: true,
+      );
+      bumpLibrary(ref);
+      HapticFeedback.mediumImpact();
+      if (!mounted) return;
+      context.go('/library/document/${doc.id}');
+    } catch (e) {
+      debugPrint('Native scanner failed: $e');
+      if (mounted) {
+        _showMessage('$e');
+        await _startStream();
+      }
+    } finally {
+      if (mounted) setState(() => _openingNative = false);
     }
-    if (_confidence >= 0.5) return const Color(0xFFFFC107);
-    return const Color(0xFF4FC3F7);
   }
 
-  /// Preview + overlay share one coordinate space (Scanella-proven layout).
-  Widget _previewWithOverlay(CameraController camera, Widget overlay) {
-    final buffer = camera.value.previewSize ?? const Size(720, 1280);
-    final portrait =
-        MediaQuery.orientationOf(context) == Orientation.portrait;
-    final shortSide = buffer.shortestSide;
-    final longSide = buffer.longestSide;
-    final size = Size(
-      portrait ? shortSide : longSide,
-      portrait ? longSide : shortSide,
-    );
+  /// Filter applied to freshly captured pages, from settings.
+  ScanAdjustments _captureAdjustments() =>
+      ScanAdjustments(filter: ref.read(settingsProvider).defaultFilter);
 
-    return SizedBox(
-      width: size.width,
-      height: size.height,
-      child: CameraPreview(
-        camera,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [overlay],
-        ),
-      ),
-    );
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      );
   }
+
+  // -------------------------------------------------------------------------
+  // Build
+  // -------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb) {
-      return _buildWebDemo(context);
+    if (kIsWeb) return const _WebDemoCamera();
+
+    final error = _cameraError;
+    if (error != null) return _CameraErrorView(message: error);
+
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return const _CameraLoadingView();
     }
 
-    if (_cameraError != null) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _cameraError!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () => openAppSettings(),
-                  child: const Text('Open Settings'),
-                ),
-                TextButton(
-                  onPressed: () => context.pop(),
-                  child: const Text(
-                    'Go back',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (_controller == null || !_controller!.value.isInitialized) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(color: Colors.white),
-              const SizedBox(height: 16),
-              Text(
-                _openingNative
-                    ? 'Opening edge scanner…'
-                    : 'Starting camera…',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final camera = _controller!;
+    // Keep auto-capture in step with the setting while the screen is open.
+    ref.listen(settingsProvider.select((s) => s.autoCapture), (_, enabled) {
+      _tracker?.setAutoCapture(enabled);
+    });
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Critical: overlay is a child of CameraPreview inside BoxFit.cover
-          // so normalized quads land on the real document pixels.
-          SizedBox.expand(
-            child: ClipRect(
-              child: FittedBox(
-                fit: BoxFit.cover,
-                clipBehavior: Clip.hardEdge,
-                child: _previewWithOverlay(
-                  camera,
-                  QuadOverlay(quad: _displayQuad, color: _overlayColor),
-                ),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 56),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _phase.message,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                    onPressed: () => context.pop(),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      _isFlashOn ? Icons.flash_on : Icons.flash_off,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    onPressed: _toggleFlash,
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.document_scanner,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    tooltip: 'Native edge scanner',
-                    onPressed: _openingNative ? null : _openNativeScanner,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 30),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_batchCount > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '$_batchCount pages captured',
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: _openingNative ? null : _openNativeScanner,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF1565C0),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                      ),
-                      icon: const Icon(Icons.auto_fix_high),
-                      label: const Text('Scan with auto edges'),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.photo,
-                            color: Colors.white,
-                            size: 32,
-                          ),
-                          onPressed: _importFromGallery,
-                        ),
-                        GestureDetector(
-                          onTap: () => _capture(),
-                          child: Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 4),
-                              color: Colors.white24,
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt,
-                              color: Colors.white,
-                              size: 36,
-                            ),
-                          ),
-                        ),
-                        FilledButton(
-                          onPressed: _batchCount > 0 ? _finishBatch : null,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: Colors.black,
-                          ),
-                          child: const Text('Done'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          if (_openingNative)
-            Container(
-              color: Colors.black54,
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: Colors.white),
-                    SizedBox(height: 12),
-                    Text(
-                      'Opening system edge scanner…',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          _buildPreview(controller),
+          _buildShutterFlash(),
+          _buildTopBar(),
+          _buildStatusPill(),
+          _buildBottomBar(),
+          if (_openingNative) const _BlockingOverlay(label: 'Opening scanner…'),
         ],
       ),
     );
   }
 
-  Widget _buildWebDemo(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      body: Stack(
-        children: [
-          Container(
-            color: Colors.grey[300],
-            child: const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.camera_alt, size: 120, color: Colors.grey),
-                  SizedBox(height: 20),
-                  Text(
-                    'Web Demo Mode\nTap shutter to simulate capture',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 18, color: Colors.black54),
-                  ),
-                ],
-              ),
-            ),
+  Widget _buildPreview(CameraController controller) {
+    final buffer = controller.value.previewSize ?? const Size(720, 1280);
+    final portrait = MediaQuery.orientationOf(context) == Orientation.portrait;
+    final previewSize = Size(
+      portrait ? buffer.shortestSide : buffer.longestSide,
+      portrait ? buffer.longestSide : buffer.shortestSide,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (details) => _tapToFocus(
+            details,
+            Size(constraints.maxWidth, constraints.maxHeight),
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: IconButton(
-                icon: const Icon(Icons.close, size: 28),
-                onPressed: () => context.pop(),
-              ),
-            ),
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 30),
-                child: GestureDetector(
-                  onTap: () => _capture(),
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.black54, width: 4),
-                      color: Colors.white,
-                    ),
-                    child: const Icon(Icons.camera_alt, size: 36),
-                  ),
+          child: ClipRect(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              clipBehavior: Clip.hardEdge,
+              child: SizedBox(
+                width: previewSize.width,
+                height: previewSize.height,
+                // The overlay is a child of CameraPreview so it shares the
+                // preview's coordinate space; normalized corners then land on
+                // the actual document pixels rather than on the screen box.
+                child: CameraPreview(
+                  controller,
+                  child: _buildOverlay(),
                 ),
               ),
             ),
           ),
-        ],
+        );
+      },
+    );
+  }
+
+  Widget _buildOverlay() {
+    final tracker = _tracker;
+    if (tracker == null) return const SizedBox.expand();
+
+    // Repaints on detection updates without rebuilding the controls above it.
+    return ValueListenableBuilder<ScanState>(
+      valueListenable: tracker.state,
+      builder: (context, state, _) {
+        return QuadOverlay(
+          quad: state.quad,
+          color: _overlayColor(state),
+          locked: state.hasDocument,
+          progress: state.holdProgress,
+        );
+      },
+    );
+  }
+
+  Color _overlayColor(ScanState state) {
+    if (state.phase == ScanPhase.capturing ||
+        state.phase == ScanPhase.captured) {
+      return const Color(0xFF4CAF50);
+    }
+    if (state.confidence >= DocumentEdgeTracker.autoCaptureConfidence) {
+      return const Color(0xFF4CAF50);
+    }
+    if (state.confidence >= DocumentEdgeTracker.minTrackConfidence) {
+      return const Color(0xFFFFC107);
+    }
+    return Colors.white70;
+  }
+
+  Widget _buildShutterFlash() {
+    return IgnorePointer(
+      child: ValueListenableBuilder<double>(
+        valueListenable: _shutterFlash,
+        builder: (context, value, _) => AnimatedOpacity(
+          opacity: value,
+          duration: const Duration(milliseconds: 110),
+          child: Container(color: Colors.white),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              _CircleButton(
+                icon: Icons.close,
+                tooltip: 'Close',
+                onPressed: () => context.pop(),
+              ),
+              const Spacer(),
+              _CircleButton(
+                icon: _isFlashOn ? Icons.flash_on : Icons.flash_off,
+                tooltip: _isFlashOn ? 'Torch on' : 'Torch off',
+                active: _isFlashOn,
+                onPressed: _toggleFlash,
+              ),
+              const SizedBox(width: 8),
+              _CircleButton(
+                icon: Icons.document_scanner_outlined,
+                tooltip: 'System scanner',
+                onPressed: _openingNative ? null : _openNativeScanner,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusPill() {
+    final tracker = _tracker;
+    if (tracker == null) return const SizedBox.shrink();
+
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 64),
+          child: ValueListenableBuilder<ScanState>(
+            valueListenable: tracker.state,
+            builder: (context, state, _) {
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      switch (state.phase) {
+                        ScanPhase.searching => Icons.search,
+                        ScanPhase.positioning => Icons.crop_free,
+                        ScanPhase.holdSteady => Icons.center_focus_strong,
+                        ScanPhase.capturing => Icons.camera,
+                        ScanPhase.captured => Icons.check_circle,
+                      },
+                      size: 18,
+                      color: _overlayColor(state),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      state.phase.message,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBar() {
+    final tracker = _tracker;
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.65),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_processingCount > 0)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Enhancing page…',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                Row(
+                  children: [
+                    Expanded(child: _buildBatchThumbnail()),
+                    if (tracker != null)
+                      ValueListenableBuilder<ScanState>(
+                        valueListenable: tracker.state,
+                        builder: (context, state, _) => _ShutterButton(
+                          progress: state.holdProgress,
+                          onPressed: _capturing ? null : () => _capture(),
+                        ),
+                      )
+                    else
+                      _ShutterButton(
+                        progress: 0,
+                        onPressed: _capturing ? null : () => _capture(),
+                      ),
+                    Expanded(child: _buildTrailingAction()),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBatchThumbnail() {
+    if (_batch.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: _CircleButton(
+          icon: Icons.photo_library_outlined,
+          tooltip: 'Import from photos',
+          onPressed: _importFromGallery,
+        ),
+      );
+    }
+
+    final last = _batch.last;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: _finishBatch,
+        onLongPress: _discardLastPage,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 52,
+              height: 66,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white, width: 2),
+                image: DecorationImage(
+                  image: MemoryImage(last.processed.bytes),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            Positioned(
+              right: -6,
+              top: -6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_batch.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrailingAction() {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: _batch.isEmpty
+          ? const SizedBox(width: 48, height: 48)
+          : FilledButton(
+              onPressed: _finishBatch,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: Text('Done (${_batch.length})'),
+            ),
+    );
+  }
+}
+
+// -------------------------------------------------------------------------
+// Small presentation pieces
+// -------------------------------------------------------------------------
+
+class _ShutterButton extends StatelessWidget {
+  const _ShutterButton({required this.progress, required this.onPressed});
+
+  final double progress;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: SizedBox(
+        width: 84,
+        height: 84,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Ring fills as auto-capture approaches, so the shutter never
+            // fires as a surprise.
+            SizedBox(
+              width: 78,
+              height: 78,
+              child: CircularProgressIndicator(
+                value: progress <= 0.01 ? 0 : progress,
+                strokeWidth: 4,
+                backgroundColor: Colors.white24,
+                valueColor:
+                    const AlwaysStoppedAnimation(Color(0xFF4CAF50)),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: onPressed == null ? 56 : 64,
+              height: onPressed == null ? 56 : 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: onPressed == null ? Colors.white54 : Colors.white,
+                boxShadow: const [
+                  BoxShadow(blurRadius: 12, color: Colors.black38),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CircleButton extends StatelessWidget {
+  const _CircleButton({
+    required this.icon,
+    required this.onPressed,
+    this.tooltip,
+    this.active = false,
+  });
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final String? tooltip;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip ?? '',
+      child: Material(
+        color: active
+            ? Colors.white
+            : Colors.black.withValues(alpha: 0.4),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(
+              icon,
+              size: 22,
+              color: active ? Colors.black : Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BlockingOverlay extends StatelessWidget {
+  const _BlockingOverlay({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black54,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: Colors.white),
+            const SizedBox(height: 14),
+            Text(label, style: const TextStyle(color: Colors.white)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CameraLoadingView extends StatelessWidget {
+  const _CameraLoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            SizedBox(height: 16),
+            Text('Starting camera…', style: TextStyle(color: Colors.white70)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CameraErrorView extends StatelessWidget {
+  const _CameraErrorView({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.no_photography_outlined,
+                  size: 56, color: Colors.white54),
+              const SizedBox(height: 16),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: openAppSettings,
+                child: const Text('Open Settings'),
+              ),
+              TextButton(
+                onPressed: () => context.pop(),
+                child: const Text('Go back',
+                    style: TextStyle(color: Colors.white70)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WebDemoCamera extends StatelessWidget {
+  const _WebDemoCamera();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Camera (demo)')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.photo_camera_outlined,
+                  size: 96, color: Theme.of(context).disabledColor),
+              const SizedBox(height: 16),
+              const Text(
+                'Scanning needs a device camera.\n'
+                'Run Scan2 on iOS or Android to scan documents.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () => context.go('/library'),
+                child: const Text('Back to library'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

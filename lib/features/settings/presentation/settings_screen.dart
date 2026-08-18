@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -10,63 +10,122 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const ListTile(
-            title: Text('Appearance'),
-            dense: true,
+          _SectionHeader('Scanning'),
+          SwitchListTile(
+            secondary: const Icon(Icons.motion_photos_auto_outlined),
+            title: const Text('Auto-capture'),
+            subtitle: const Text(
+              'Take the shot automatically once the page is in frame '
+              'and the phone is steady.',
+            ),
+            value: settings.autoCapture,
+            onChanged: notifier.setAutoCapture,
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.volume_up_outlined),
+            title: const Text('Shutter sound'),
+            value: settings.shutterSound,
+            onChanged: notifier.setShutterSound,
+          ),
+          const Divider(height: 32),
+
+          _SectionHeader('Enhancement'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'Applied to new scans. You can change it per page afterwards.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                for (final filter in ScanFilter.values)
+                  ChoiceChip(
+                    label: Text(ImageProcessor.labelFor(filter)),
+                    selected: settings.defaultFilter == filter,
+                    showCheckmark: false,
+                    onSelected: (_) => notifier.setDefaultFilter(filter),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 32),
+
+          _SectionHeader('Appearance'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SegmentedButton<ThemeMode>(
               segments: const [
-                ButtonSegment(value: ThemeMode.system, label: Text('System')),
-                ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-                ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+                ButtonSegment(
+                  value: ThemeMode.system,
+                  label: Text('System'),
+                  icon: Icon(Icons.brightness_auto_outlined),
+                ),
+                ButtonSegment(
+                  value: ThemeMode.light,
+                  label: Text('Light'),
+                  icon: Icon(Icons.light_mode_outlined),
+                ),
+                ButtonSegment(
+                  value: ThemeMode.dark,
+                  label: Text('Dark'),
+                  icon: Icon(Icons.dark_mode_outlined),
+                ),
               ],
               selected: {settings.themeMode},
-              onSelectionChanged: (s) => notifier.setThemeMode(s.first),
+              onSelectionChanged: (selection) =>
+                  notifier.setThemeMode(selection.first),
             ),
           ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text('Auto-capture when edges lock'),
-            subtitle: const Text(
-              'Live guides are always on. Turn this on to auto-shutter when steady. '
-              'For best edges use “Scan with auto edges” (VisionKit).',
-            ),
-            value: settings.autoDetectEdges,
-            onChanged: notifier.setAutoDetectEdges,
-          ),
-          SwitchListTile(
-            title: const Text('Enhance by default'),
-            subtitle: const Text('Apply Magic filter on new pages'),
-            value: settings.enhanceByDefault,
-            onChanged: notifier.setEnhanceByDefault,
-          ),
-          const Divider(),
+          const Divider(height: 32),
+
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('About Scan2'),
-            subtitle: const Text('Offline document scanner • v1.0.0'),
-            onTap: () {
-              showAboutDialog(
-                context: context,
-                applicationName: 'Scan2',
-                applicationVersion: '1.0.0',
-                applicationLegalese: 'Original branding. Fully offline.',
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.arrow_back),
-            title: const Text('Back to library'),
-            onTap: () => context.go('/library'),
+            subtitle: const Text('Offline document scanner'),
+            onTap: () => showAboutDialog(
+              context: context,
+              applicationName: 'Scan2',
+              applicationVersion: '1.0.1',
+              applicationLegalese:
+                  'Scans stay on your device. Nothing is uploaded.',
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      child: Text(
+        label.toUpperCase(),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+        ),
       ),
     );
   }

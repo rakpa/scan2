@@ -1,41 +1,102 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:scan2/features/crop/domain/image_processor.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+@immutable
 class AppSettings {
-  final ThemeMode themeMode;
-  final bool autoDetectEdges;
-  final bool enhanceByDefault;
-
   const AppSettings({
     this.themeMode = ThemeMode.system,
-    this.autoDetectEdges = false,
-    this.enhanceByDefault = true,
+    this.autoCapture = true,
+    this.defaultFilter = ScanFilter.magic,
+    this.shutterSound = true,
   });
+
+  final ThemeMode themeMode;
+
+  /// Release the shutter automatically once the page is recognised and still.
+  /// On by default: it is the reason to use a scanner rather than the camera.
+  final bool autoCapture;
+
+  /// Filter pre-selected for freshly captured pages.
+  final ScanFilter defaultFilter;
+
+  final bool shutterSound;
 
   AppSettings copyWith({
     ThemeMode? themeMode,
-    bool? autoDetectEdges,
-    bool? enhanceByDefault,
+    bool? autoCapture,
+    ScanFilter? defaultFilter,
+    bool? shutterSound,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
-      autoDetectEdges: autoDetectEdges ?? this.autoDetectEdges,
-      enhanceByDefault: enhanceByDefault ?? this.enhanceByDefault,
+      autoCapture: autoCapture ?? this.autoCapture,
+      defaultFilter: defaultFilter ?? this.defaultFilter,
+      shutterSound: shutterSound ?? this.shutterSound,
     );
   }
 }
 
+/// Settings backed by shared_preferences.
+///
+/// These were previously in-memory only, so every preference reset on each
+/// launch — including auto-capture, which a user turning it off would have to
+/// turn off again every single time.
 class SettingsNotifier extends StateNotifier<AppSettings> {
-  SettingsNotifier() : super(const AppSettings());
+  SettingsNotifier() : super(const AppSettings()) {
+    _restore();
+  }
 
-  void setThemeMode(ThemeMode mode) =>
-      state = state.copyWith(themeMode: mode);
+  static const _themeKey = 'settings.themeMode';
+  static const _autoCaptureKey = 'settings.autoCapture';
+  static const _filterKey = 'settings.defaultFilter';
+  static const _shutterKey = 'settings.shutterSound';
 
-  void setAutoDetectEdges(bool value) =>
-      state = state.copyWith(autoDetectEdges: value);
+  SharedPreferences? _prefs;
 
-  void setEnhanceByDefault(bool value) =>
-      state = state.copyWith(enhanceByDefault: value);
+  Future<void> _restore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _prefs = prefs;
+
+      final themeIndex = prefs.getInt(_themeKey);
+      final filterIndex = prefs.getInt(_filterKey);
+      state = AppSettings(
+        themeMode: themeIndex != null && themeIndex < ThemeMode.values.length
+            ? ThemeMode.values[themeIndex]
+            : ThemeMode.system,
+        autoCapture: prefs.getBool(_autoCaptureKey) ?? true,
+        defaultFilter:
+            filterIndex != null && filterIndex < ScanFilter.values.length
+                ? ScanFilter.values[filterIndex]
+                : ScanFilter.magic,
+        shutterSound: prefs.getBool(_shutterKey) ?? true,
+      );
+    } catch (e) {
+      debugPrint('Settings unavailable, using defaults: $e');
+    }
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    state = state.copyWith(themeMode: mode);
+    _prefs?.setInt(_themeKey, mode.index);
+  }
+
+  void setAutoCapture(bool value) {
+    state = state.copyWith(autoCapture: value);
+    _prefs?.setBool(_autoCaptureKey, value);
+  }
+
+  void setDefaultFilter(ScanFilter filter) {
+    state = state.copyWith(defaultFilter: filter);
+    _prefs?.setInt(_filterKey, filter.index);
+  }
+
+  void setShutterSound(bool value) {
+    state = state.copyWith(shutterSound: value);
+    _prefs?.setBool(_shutterKey, value);
+  }
 }
 
 final settingsProvider =

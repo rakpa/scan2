@@ -2,18 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/features/camera/presentation/camera_screen.dart';
-import 'package:scan2/features/library/presentation/library_screen.dart';
-import 'package:scan2/features/library/presentation/document_detail_screen.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/crop/presentation/crop_screen.dart';
+import 'package:scan2/features/library/presentation/document_detail_screen.dart';
+import 'package:scan2/features/library/presentation/library_screen.dart';
+import 'package:scan2/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
 import 'package:scan2/features/shared/providers/onboarding_provider.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final onboardingCompleted = ref.watch(onboardingCompletedProvider);
-
-  return GoRouter(
-    initialLocation: onboardingCompleted ? '/library' : '/onboarding',
+  final router = GoRouter(
+    initialLocation: '/library',
+    redirect: (context, state) {
+      // Read rather than watch: rebuilding the router mid-navigation would
+      // drop the current route stack.
+      final completed = ref.read(onboardingCompletedProvider);
+      final onOnboarding = state.matchedLocation == '/onboarding';
+      if (!completed && !onOnboarding) return '/onboarding';
+      if (completed && onOnboarding) return '/library';
+      return null;
+    },
     routes: [
       GoRoute(
         path: '/onboarding',
@@ -26,7 +34,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'document/:id',
             builder: (context, state) {
-              final id = int.parse(state.pathParameters['id']!);
+              final id = int.tryParse(state.pathParameters['id'] ?? '');
+              if (id == null) return const _RouteError(message: 'Bad document');
               return DocumentDetailScreen(documentId: id);
             },
           ),
@@ -40,12 +49,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/crop',
         builder: (context, state) {
           final extra = state.extra;
-          if (extra is CropArgs) {
-            return CropScreen.fromArgs(extra);
-          }
-          final imagePath = extra is String ? extra : null;
-          final pageId = extra is int ? extra : null;
-          return CropScreen(pageId: pageId, imagePath: imagePath);
+          if (extra is CropArgs) return CropScreen.fromArgs(extra);
+          if (extra is String) return CropScreen(imagePath: extra);
+          return const _RouteError(message: 'Nothing to edit');
         },
       ),
       GoRoute(
@@ -53,34 +59,43 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SettingsScreen(),
       ),
     ],
-    errorBuilder: (context, state) => Scaffold(
-      body: Center(child: Text('Page not found: ${state.uri}')),
-    ),
+    errorBuilder: (context, state) =>
+        _RouteError(message: 'Page not found: ${state.uri}'),
   );
+
+  // Re-evaluate the onboarding redirect when it completes.
+  ref.listen<bool>(onboardingCompletedProvider, (_, __) {
+    router.refresh();
+  });
+  ref.onDispose(router.dispose);
+  return router;
 });
 
-class OnboardingScreen extends ConsumerWidget {
-  const OnboardingScreen({super.key});
+class _RouteError extends StatelessWidget {
+  const _RouteError({required this.message});
+
+  final String message;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('Welcome to Scan2', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            const Text('Smart offline document scanner'),
-            const SizedBox(height: 32),
-            FilledButton(
-              onPressed: () {
-                ref.read(onboardingCompletedProvider.notifier).complete();
-                context.go('/library');
-              },
-              child: const Text('Get Started'),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48),
+              const SizedBox(height: 12),
+              Text(message, textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: () => context.go('/library'),
+                child: const Text('Back to library'),
+              ),
+            ],
+          ),
         ),
       ),
     );
