@@ -52,6 +52,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   bool _capturing = false;
   bool _openingNative = false;
   bool _analyzing = false;
+  bool _initializing = false;
   int _processingCount = 0;
 
   /// Drives the white flash played over the preview on capture.
@@ -125,7 +126,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   // -------------------------------------------------------------------------
 
   Future<void> _initCamera() async {
-    if (_controller != null) return;
+    // Backgrounding and foregrounding quickly can land two of these in flight
+    // before either has assigned _controller, leaving an orphaned controller
+    // holding the camera.
+    if (_controller != null || _initializing) return;
+    _initializing = true;
     try {
       final permission = await Permission.camera.request();
       if (!permission.isGranted) {
@@ -178,6 +183,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       if (mounted) {
         setState(() => _cameraError = 'Camera failed to start: $e');
       }
+    } finally {
+      _initializing = false;
     }
   }
 
@@ -268,6 +275,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     try {
       await _stopStream();
       final file = await controller.takePicture();
+      // The screen can be torn down while the shutter is open; everything
+      // below touches state that dispose() has already released.
+      if (!mounted) return;
       _playShutter();
 
       tracker?.lockAfterCapture(quadAtCapture ?? const Quad.centered());
@@ -279,6 +289,11 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       setState(() => _processingCount++);
       final processed = await _processor.process(
         imagePath: file.path,
+        // Fall back to the outline the preview was tracking, so a still that
+        // fails to detect does not save as an uncropped full frame.
+        fallbackQuad: tracker?.value.hasDocument ?? false
+            ? quadAtCapture
+            : null,
         adjustments: _captureAdjustments(),
       );
 

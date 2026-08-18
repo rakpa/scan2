@@ -79,6 +79,44 @@ void main() {
       expect(decoded.height, closeTo(1200, 20));
     });
 
+    test(
+      'falls back to the live outline when the still detects nothing',
+      () async {
+        // A blank frame: nothing for the detector to find.
+        final blank = img.Image(width: 600, height: 800);
+        img.fill(blank, color: img.ColorRgb8(130, 130, 130));
+        final blankPath = '${temp.path}/blank.jpg';
+        File(blankPath).writeAsBytesSync(img.encodeJpg(blank, quality: 92));
+
+        const live = Quad(
+          topLeft: Offset(0.2, 0.2),
+          topRight: Offset(0.8, 0.2),
+          bottomRight: Offset(0.8, 0.8),
+          bottomLeft: Offset(0.2, 0.8),
+        );
+
+        final withoutFallback = await const PageProcessor().process(
+          imagePath: blankPath,
+        );
+        expect(withoutFallback.quad, isNull);
+
+        final withFallback = await const PageProcessor().process(
+          imagePath: blankPath,
+          fallbackQuad: live,
+        );
+        expect(
+          withFallback.quad,
+          live,
+          reason: 'the tracked outline should be used when detection fails',
+        );
+
+        // And it must actually crop to it: 60% of 600x800.
+        final decoded = img.decodeImage(withFallback.bytes)!;
+        expect(decoded.width, closeTo(360, 12));
+        expect(decoded.height, closeTo(480, 12));
+      },
+    );
+
     test('render re-derives from source bytes', () async {
       final source = File(capturePath).readAsBytesSync();
       final rendered = await const PageProcessor().render(

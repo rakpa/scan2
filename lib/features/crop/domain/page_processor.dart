@@ -35,9 +35,17 @@ class ProcessedCapture {
 class PageProcessor {
   const PageProcessor();
 
+  /// [quad] forces a crop; leave it null to detect one.
+  ///
+  /// [fallbackQuad] is used only when detection on the still image finds
+  /// nothing — normally the edges the live preview was tracking at the moment
+  /// of capture. Without it, a still that fails to detect saves the whole
+  /// frame uncropped, even though the user was looking at a locked-on outline
+  /// a fraction of a second earlier.
   Future<ProcessedCapture> process({
     required String imagePath,
     Quad? quad,
+    Quad? fallbackQuad,
     ScanAdjustments adjustments = const ScanAdjustments(),
     bool detectEdges = true,
   }) async {
@@ -47,6 +55,9 @@ class PageProcessor {
       _ProcessRequest(
         bytes: bytes,
         quad: quad == null ? null : _FlatQuad.from(quad),
+        fallbackQuad: fallbackQuad == null
+            ? null
+            : _FlatQuad.from(fallbackQuad),
         adjustments: adjustments,
         detectEdges: detectEdges,
       ),
@@ -65,6 +76,7 @@ class PageProcessor {
       _ProcessRequest(
         bytes: sourceBytes,
         quad: quad == null ? null : _FlatQuad.from(quad),
+        fallbackQuad: null,
         adjustments: adjustments,
         detectEdges: false,
       ),
@@ -100,12 +112,14 @@ class _ProcessRequest {
   const _ProcessRequest({
     required this.bytes,
     required this.quad,
+    required this.fallbackQuad,
     required this.adjustments,
     required this.detectEdges,
   });
 
   final Uint8List bytes;
   final _FlatQuad? quad;
+  final _FlatQuad? fallbackQuad;
   final ScanAdjustments adjustments;
   final bool detectEdges;
 }
@@ -124,7 +138,7 @@ ProcessedCapture _processIsolate(_ProcessRequest request) {
 
   var quad = request.quad?.toQuad();
   if (quad == null && request.detectEdges) {
-    quad = detectQuadInRaster(source);
+    quad = detectQuadInRaster(source) ?? request.fallbackQuad?.toQuad();
   }
 
   return ProcessedCapture(
