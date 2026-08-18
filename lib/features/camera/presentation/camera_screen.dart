@@ -74,7 +74,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     _shutterFlash.dispose();
     _tracker?.dispose();
     _analyzer.dispose();
-    _disposeController();
+    unawaited(_disposeController());
     super.dispose();
   }
 
@@ -84,31 +84,40 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
+    if (kIsWeb) return;
 
     // The OS revokes the camera when the app leaves the foreground. Without
-    // this the preview comes back as a frozen black rectangle, which is the
-    // most common way a camera screen "breaks" in the wild.
+    // releasing and reacquiring it, the preview comes back as a frozen black
+    // rectangle — the most common way a camera screen "breaks" in the wild.
     switch (state) {
+      case AppLifecycleState.resumed:
+        // Note this runs when _controller is already null, so it must not be
+        // guarded on having a live controller.
+        unawaited(_initCamera());
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        _tracker?.stop();
-        _stopStream();
-        _disposeController();
-        if (mounted) setState(() {});
-      case AppLifecycleState.resumed:
-        _initCamera();
+        unawaited(_releaseCamera());
     }
   }
 
-  void _disposeController() {
+  Future<void> _releaseCamera() async {
+    _tracker?.stop();
+    await _stopStream();
+    await _disposeController();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _disposeController() async {
     final controller = _controller;
     _controller = null;
     if (controller == null) return;
-    controller.dispose().catchError((_) {});
+    try {
+      await controller.dispose();
+    } catch (_) {
+      // Nothing useful to do if the platform side already tore it down.
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -172,11 +181,15 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   void _startTracker() {
-    _tracker?.dispose();
-    final tracker = DocumentEdgeTracker(onAutoCapture: _onAutoCapture)
+    // Reused across resumes: disposing one the widget tree is still listening
+    // to would leave a ValueListenableBuilder bound to a dead notifier until
+    // the next rebuild.
+    final tracker = _tracker ??
+        DocumentEdgeTracker(onAutoCapture: _onAutoCapture);
+    _tracker = tracker;
+    tracker
       ..setAutoCapture(ref.read(settingsProvider).autoCapture)
       ..start();
-    _tracker = tracker;
   }
 
   Future<void> _startStream() async {

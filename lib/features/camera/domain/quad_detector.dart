@@ -77,6 +77,28 @@ class Quad {
     }
   }
 
+  /// Pulls every corner toward the centre by [fraction] of the quad's size.
+  ///
+  /// Detected borders land within a pixel or two of the paper edge, which is
+  /// accurate but leaves a thin dark rim of desk around the cropped page.
+  /// Cropping marginally inside the detected border trims that rim; the
+  /// fraction of a millimetre of paper it costs is invisible.
+  Quad shrink(double fraction) {
+    if (fraction <= 0) return this;
+    final centre = Offset(
+      (topLeft.dx + topRight.dx + bottomRight.dx + bottomLeft.dx) / 4,
+      (topLeft.dy + topRight.dy + bottomRight.dy + bottomLeft.dy) / 4,
+    );
+    Offset pull(Offset corner) =>
+        Offset.lerp(corner, centre, fraction) ?? corner;
+    return Quad(
+      topLeft: pull(topLeft),
+      topRight: pull(topRight),
+      bottomRight: pull(bottomRight),
+      bottomLeft: pull(bottomLeft),
+    );
+  }
+
   Quad lerp(Quad other, double t) {
     return Quad(
       topLeft: Offset.lerp(topLeft, other.topLeft, t)!,

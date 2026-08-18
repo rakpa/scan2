@@ -150,6 +150,9 @@ Uint8List _renderRaster(
   return Uint8List.fromList(img.encodeJpg(out.toImage(), quality: 92));
 }
 
+/// How far inside the detected border to crop, as a fraction of page size.
+const _borderInset = 0.006;
+
 /// Runs edge detection over a full-resolution raster by analysing a
 /// downscaled luminance copy, matching the live preview's analysis size so a
 /// still capture agrees with the guides the user just saw.
@@ -162,5 +165,8 @@ Quad? detectQuadInRaster(Raster source) {
   final detection = const DocumentQuadDetector()
       .detect(small.toLuma(), small.width, small.height);
   if (detection == null) return null;
-  return Quad.fromCorners(detection.corners);
+
+  // Crop just inside the detected border so the page does not come out with
+  // a dark rim of desk along its edges.
+  return Quad.fromCorners(detection.corners).shrink(_borderInset);
 }

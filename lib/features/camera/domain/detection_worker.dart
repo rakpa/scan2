@@ -43,9 +43,18 @@ class DetectionWorker {
       debugName: 'scan2-detection',
     );
 
-    // The isolate's first message is the port to send frames to.
-    final requests = await incoming.firstWhere((m) => m is SendPort) as SendPort;
-    return DetectionWorker._(isolate, requests, responses, incoming);
+    // The isolate's first message is the port to send frames to. Bounded, so
+    // a failed spawn surfaces as an error instead of hanging camera startup.
+    try {
+      final requests = await incoming
+          .firstWhere((m) => m is SendPort)
+          .timeout(const Duration(seconds: 5)) as SendPort;
+      return DetectionWorker._(isolate, requests, responses, incoming);
+    } catch (e) {
+      isolate.kill(priority: Isolate.immediate);
+      responses.close();
+      rethrow;
+    }
   }
 
   /// True when a frame is already being analysed. Callers should skip the
