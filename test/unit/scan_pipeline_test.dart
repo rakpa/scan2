@@ -62,8 +62,11 @@ void main() {
         error += (found[i] - expected[i]).distance;
       }
       error = (error / 4) / diagonal;
-      expect(error, lessThan(0.02),
-          reason: 'corner error ${(error * 100).toStringAsFixed(2)}%');
+      expect(
+        error,
+        lessThan(0.02),
+        reason: 'corner error ${(error * 100).toStringAsFixed(2)}%',
+      );
     });
 
     test('warping removes the perspective taper', () {
@@ -126,7 +129,8 @@ void main() {
         expect(
           error,
           lessThan(0.02),
-          reason: 'mark $mark landed at $found '
+          reason:
+              'mark $mark landed at $found '
               '(${(error * 100).toStringAsFixed(1)}% off)',
         );
       }
@@ -147,15 +151,27 @@ void main() {
           (_patchLuma(enhanced, 0.04, 0.5) - _patchLuma(enhanced, 0.96, 0.5))
               .abs();
 
-      expect(afterGap, lessThan(beforeGap),
-          reason: 'shading across the page should be reduced');
-      expect(_patchLuma(enhanced, 0.96, 0.5), greaterThan(200),
-          reason: 'the dim side of the page should end up white');
+      expect(
+        afterGap,
+        lessThan(beforeGap),
+        reason: 'shading across the page should be reduced',
+      );
+      expect(
+        _patchLuma(enhanced, 0.96, 0.5),
+        greaterThan(200),
+        reason: 'the dim side of the page should end up white',
+      );
     });
 
     test('full-frame quads skip the warp entirely', () {
-      expect(PerspectiveTransformer.isFullFrame(const Quad.fullFrame()), isTrue);
-      expect(PerspectiveTransformer.isFullFrame(const Quad.centered()), isFalse);
+      expect(
+        PerspectiveTransformer.isFullFrame(const Quad.fullFrame()),
+        isTrue,
+      );
+      expect(
+        PerspectiveTransformer.isFullFrame(const Quad.centered()),
+        isFalse,
+      );
     });
   });
 }

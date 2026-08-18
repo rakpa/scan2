@@ -68,7 +68,9 @@ class DocumentQuadDetector {
     Offset pick(double Function(Offset) score, bool minimum) {
       var best = pts.first;
       for (final p in pts.skip(1)) {
-        final better = minimum ? score(p) < score(best) : score(p) > score(best);
+        final better = minimum
+            ? score(p) < score(best)
+            : score(p) > score(best);
         if (better) best = p;
       }
       return best;
@@ -165,15 +167,36 @@ class DocumentQuadDetector {
 
     final minVotesV = math.max(6, (0.15 * h).round());
     final minVotesH = math.max(6, (0.15 * w).round());
-    final vPos = _topLines(accVPos, bCount, offset: bOffset, minVotes: minVotesV);
-    final vNeg = _topLines(accVNeg, bCount, offset: bOffset, minVotes: minVotesV);
-    final hPos = _topLines(accHPos, dCount, offset: dOffset, minVotes: minVotesH);
-    final hNeg = _topLines(accHNeg, dCount, offset: dOffset, minVotes: minVotesH);
+    final vPos = _topLines(
+      accVPos,
+      bCount,
+      offset: bOffset,
+      minVotes: minVotesV,
+    );
+    final vNeg = _topLines(
+      accVNeg,
+      bCount,
+      offset: bOffset,
+      minVotes: minVotesV,
+    );
+    final hPos = _topLines(
+      accHPos,
+      dCount,
+      offset: dOffset,
+      minVotes: minVotesH,
+    );
+    final hNeg = _topLines(
+      accHNeg,
+      dCount,
+      offset: dOffset,
+      minVotes: minVotesH,
+    );
 
     // Hypothesis A: page brighter than its surroundings — the left/top borders
     // are rising edges, the right/bottom borders falling. Hypothesis B is a
     // dark page on a light surface, where every sign flips.
-    final best = _bestCandidate(lum, w, h, vPos, vNeg, hPos, hNeg, true) ??
+    final best =
+        _bestCandidate(lum, w, h, vPos, vNeg, hPos, hNeg, true) ??
         _bestCandidate(lum, w, h, vNeg, vPos, hNeg, hPos, false);
     return best;
   }
@@ -245,13 +268,19 @@ class DocumentQuadDetector {
             final areaRatio = _polygonArea(ordered) / (w * h);
             if (areaRatio < _minAreaRatio || areaRatio > 0.99) continue;
 
-            final support =
-                _signedEdgeSupport(lum, w, h, ordered, pageIsBright);
+            final support = _signedEdgeSupport(
+              lum,
+              w,
+              h,
+              ordered,
+              pageIsBright,
+            );
             if (support.consistency < 0.55) continue;
 
             // Prefer strong, consistent borders; break ties toward the larger
             // quad, because the page always encloses whatever is printed on it.
-            final score = support.consistency * 0.55 +
+            final score =
+                support.consistency * 0.55 +
                 math.min(support.contrast / 40, 1.0) * 0.25 +
                 math.min(areaRatio * 1.6, 1.0) * 0.20;
 
@@ -259,10 +288,12 @@ class DocumentQuadDetector {
               bestScore = score;
               best = QuadDetection(
                 corners: ordered
-                    .map((p) => Offset(
-                          (p.dx / w).clamp(0.0, 1.0),
-                          (p.dy / h).clamp(0.0, 1.0),
-                        ))
+                    .map(
+                      (p) => Offset(
+                        (p.dx / w).clamp(0.0, 1.0),
+                        (p.dy / h).clamp(0.0, 1.0),
+                      ),
+                    )
                     .toList(growable: false),
                 confidence: score.clamp(0.0, 0.98),
               );
@@ -309,20 +340,26 @@ class DocumentQuadDetector {
       }
       if (bestVotes < minVotes) break;
 
-      lines.add(_HoughLine(
-        slope: -_maxSlope + bestS * (2 * _maxSlope / (_slopeBins - 1)),
-        intercept: (bestB - offset).toDouble(),
-        votes: bestVotes,
-      ));
+      lines.add(
+        _HoughLine(
+          slope: -_maxSlope + bestS * (2 * _maxSlope / (_slopeBins - 1)),
+          intercept: (bestB - offset).toDouble(),
+          votes: bestVotes,
+        ),
+      );
 
       // Suppress the ridge around this peak so the next pick is a
       // genuinely different edge.
-      for (var s = math.max(0, bestS - 3);
-          s <= math.min(_slopeBins - 1, bestS + 3);
-          s++) {
-        for (var b = math.max(0, bestB - 8);
-            b <= math.min(interceptCount - 1, bestB + 8);
-            b++) {
+      for (
+        var s = math.max(0, bestS - 3);
+        s <= math.min(_slopeBins - 1, bestS + 3);
+        s++
+      ) {
+        for (
+          var b = math.max(0, bestB - 8);
+          b <= math.min(interceptCount - 1, bestB + 8);
+          b++
+        ) {
           working[s * interceptCount + b] = 0;
         }
       }
@@ -381,21 +418,23 @@ class DocumentQuadDetector {
     // orientation of the border step is the stronger.
     final bright = _signedEdgeSupport(blurred, width, height, corners, true);
     final dark = _signedEdgeSupport(blurred, width, height, corners, false);
-    final support =
-        bright.consistency >= dark.consistency ? bright : dark;
+    final support = bright.consistency >= dark.consistency ? bright : dark;
     if (support.consistency < 0.45) return null;
 
-    final confidence = (0.15 +
-            0.40 * support.consistency +
-            0.25 * solidity +
-            0.10 * math.min(quadAreaRatio * 2.5, 1.0))
-        .clamp(0.0, 0.85);
+    final confidence =
+        (0.15 +
+                0.40 * support.consistency +
+                0.25 * solidity +
+                0.10 * math.min(quadAreaRatio * 2.5, 1.0))
+            .clamp(0.0, 0.85);
 
     final normalized = corners
-        .map((c) => Offset(
-              (c.dx / width).clamp(0.0, 1.0),
-              (c.dy / height).clamp(0.0, 1.0),
-            ))
+        .map(
+          (c) => Offset(
+            (c.dx / width).clamp(0.0, 1.0),
+            (c.dy / height).clamp(0.0, 1.0),
+          ),
+        )
         .toList(growable: false);
 
     return QuadDetection(
@@ -413,9 +452,16 @@ class DocumentQuadDetector {
       for (var x = 0; x < w; x++) {
         final x0 = math.max(0, x - 1);
         final x2 = math.min(w - 1, x + 1);
-        final sum = src[y0 + x0] + src[y0 + x] + src[y0 + x2] +
-            src[y1 + x0] + src[y1 + x] + src[y1 + x2] +
-            src[y2 + x0] + src[y2 + x] + src[y2 + x2];
+        final sum =
+            src[y0 + x0] +
+            src[y0 + x] +
+            src[y0 + x2] +
+            src[y1 + x0] +
+            src[y1 + x] +
+            src[y1 + x2] +
+            src[y2 + x0] +
+            src[y2 + x] +
+            src[y2 + x2];
         out[y1 + x] = sum ~/ 9;
       }
     }
@@ -625,8 +671,14 @@ class DocumentQuadDetector {
       for (var s = 2; s < steps - 1; s++) {
         final t = s / steps;
         final p = a + edge * t;
-        final inside = lumAt(p.dx - normal.dx * probe, p.dy - normal.dy * probe);
-        final outside = lumAt(p.dx + normal.dx * probe, p.dy + normal.dy * probe);
+        final inside = lumAt(
+          p.dx - normal.dx * probe,
+          p.dy - normal.dy * probe,
+        );
+        final outside = lumAt(
+          p.dx + normal.dx * probe,
+          p.dy + normal.dy * probe,
+        );
         final diff = pageIsBright ? inside - outside : outside - inside;
         total++;
         contrastSum += diff;

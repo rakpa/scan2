@@ -38,8 +38,5 @@ abstract class DocumentRepository {
 
   Future<void> deleteDocument(int id);
 
-  Future<void> deletePage({
-    required int documentId,
-    required String pagePath,
-  });
+  Future<void> deletePage({required int documentId, required String pagePath});
 }

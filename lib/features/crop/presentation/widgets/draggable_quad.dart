@@ -40,9 +40,9 @@ class _DraggableQuadState extends State<DraggableQuad> {
   int? _activeEdge;
 
   Offset _toLocal(Offset normalized) => Offset(
-        widget.imageRect.left + normalized.dx * widget.imageRect.width,
-        widget.imageRect.top + normalized.dy * widget.imageRect.height,
-      );
+    widget.imageRect.left + normalized.dx * widget.imageRect.width,
+    widget.imageRect.top + normalized.dy * widget.imageRect.height,
+  );
 
   Offset _toNormalized(Offset local) {
     final rect = widget.imageRect;

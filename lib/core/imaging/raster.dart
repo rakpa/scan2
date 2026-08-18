@@ -13,7 +13,7 @@ class Raster {
   Raster(this.width, this.height) : pixels = Uint8List(width * height * 3);
 
   Raster.fromPixels(this.width, this.height, this.pixels)
-      : assert(pixels.length == width * height * 3);
+    : assert(pixels.length == width * height * 3);
 
   final int width;
   final int height;
@@ -39,7 +39,8 @@ class Raster {
     );
   }
 
-  Raster clone() => Raster.fromPixels(width, height, Uint8List.fromList(pixels));
+  Raster clone() =>
+      Raster.fromPixels(width, height, Uint8List.fromList(pixels));
 
   /// Rec. 601 luma, the channel weighting scanners threshold on.
   Uint8List toLuma() {
@@ -199,13 +200,7 @@ Uint8List localMeanLuma(Uint8List src, int width, int height, int radius) {
   return _upsampleLuma(blurred, sw, sh, width, height);
 }
 
-Uint8List _downsampleLuma(
-  Uint8List src,
-  int w,
-  int h,
-  int dw,
-  int dh,
-) {
+Uint8List _downsampleLuma(Uint8List src, int w, int h, int dw, int dh) {
   final out = Uint8List(dw * dh);
   for (var y = 0; y < dh; y++) {
     final sy0 = (y * h / dh).floor();

@@ -112,13 +112,25 @@ class CameraFrameAnalyzer {
 
     switch (image.format.group) {
       case ImageFormatGroup.bgra8888:
-        _fillFromBgra(image.planes.first,
-            srcW: srcW, srcH: srcH, targetW: targetW, targetH: targetH, grid: grid);
+        _fillFromBgra(
+          image.planes.first,
+          srcW: srcW,
+          srcH: srcH,
+          targetW: targetW,
+          targetH: targetH,
+          grid: grid,
+        );
       case ImageFormatGroup.yuv420:
       case ImageFormatGroup.nv21:
       default:
-        _fillFromYPlane(image.planes.first,
-            srcW: srcW, srcH: srcH, targetW: targetW, targetH: targetH, grid: grid);
+        _fillFromYPlane(
+          image.planes.first,
+          srcW: srcW,
+          srcH: srcH,
+          targetW: targetW,
+          targetH: targetH,
+          grid: grid,
+        );
     }
 
     return LuminanceGrid(bytes: grid, width: targetW, height: targetH);
@@ -181,11 +193,11 @@ class CameraFrameAnalyzer {
 Quad _toPreviewQuadImpl(List<Offset> bufferCorners, int rotation) {
   // Normalized coordinates, so a rotation is just an axis swap and flip.
   Offset rotate(Offset p) => switch (rotation % 360) {
-        90 => Offset(1 - p.dy, p.dx),
-        180 => Offset(1 - p.dx, 1 - p.dy),
-        270 => Offset(p.dy, 1 - p.dx),
-        _ => p,
-      };
+    90 => Offset(1 - p.dy, p.dx),
+    180 => Offset(1 - p.dx, 1 - p.dy),
+    270 => Offset(p.dy, 1 - p.dx),
+    _ => p,
+  };
 
   final rotated = DocumentQuadDetector.orderCorners(
     bufferCorners.map(rotate).toList(growable: false),

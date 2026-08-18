@@ -161,8 +161,9 @@ class DocumentEdgeTracker {
       _missedFrames = 0;
 
       final previous = _lastDetection;
-      final motion =
-          previous == null ? 1.0 : detected.averageCornerDistance(previous);
+      final motion = previous == null
+          ? 1.0
+          : detected.averageCornerDistance(previous);
       _lastDetection = detected;
 
       // Snap toward a detection that jumped; smooth one that barely moved.
@@ -210,7 +211,8 @@ class DocumentEdgeTracker {
 
     if (_capturing) return;
 
-    final steady = _confidence >= autoCaptureConfidence &&
+    final steady =
+        _confidence >= autoCaptureConfidence &&
         _lastDetection != null &&
         _missedFrames == 0;
 
@@ -259,8 +261,10 @@ class DocumentEdgeTracker {
     final resolved = phase ?? _resolvePhase();
     final progress = holdDuration.inMicroseconds == 0
         ? 0.0
-        : (_steadyFor.inMicroseconds / holdDuration.inMicroseconds)
-            .clamp(0.0, 1.0);
+        : (_steadyFor.inMicroseconds / holdDuration.inMicroseconds).clamp(
+            0.0,
+            1.0,
+          );
 
     state.value = ScanState(
       quad: _quad,

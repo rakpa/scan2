@@ -116,8 +116,7 @@ bool _sameSide(List<Offset> poly, Offset p) {
   for (var i = 0; i < poly.length; i++) {
     final a = poly[i];
     final b = poly[(i + 1) % poly.length];
-    final cross =
-        (b.dx - a.dx) * (p.dy - a.dy) - (b.dy - a.dy) * (p.dx - a.dx);
+    final cross = (b.dx - a.dx) * (p.dy - a.dy) - (b.dy - a.dy) * (p.dx - a.dx);
     if (cross > 0) positive = true;
     if (cross < 0) negative = true;
     if (positive && negative) return false;
@@ -173,8 +172,13 @@ Raster buildColorScene({
   for (var y = 0; y < height; y++) {
     for (var x = 0; x < width; x++) {
       final n = (random.nextDouble() - 0.5) * 6;
-      put(x, y, (backgroundR + n).round(), (backgroundG + n).round(),
-          (backgroundB + n).round());
+      put(
+        x,
+        y,
+        (backgroundR + n).round(),
+        (backgroundG + n).round(),
+        (backgroundB + n).round(),
+      );
     }
   }
 
@@ -185,8 +189,13 @@ Raster buildColorScene({
       // Light falls off across the sheet, as it does when a phone shades it.
       final shade = 1 - lightingFalloff * (x / width);
       final n = (random.nextDouble() - 0.5) * 4;
-      put(x, y, (pageR * shade + n).round(), (pageG * shade + n).round(),
-          (pageB * shade + n).round());
+      put(
+        x,
+        y,
+        (pageR * shade + n).round(),
+        (pageG * shade + n).round(),
+        (pageB * shade + n).round(),
+      );
     }
   }
 
@@ -222,7 +231,11 @@ Raster buildColorScene({
 
 /// Centre of the darkest blob nearest [expected] in page-relative coordinates,
 /// or null when no marker is found there.
-Offset? findMarker(Raster raster, Offset expected, {double searchRadius = 0.12}) {
+Offset? findMarker(
+  Raster raster,
+  Offset expected, {
+  double searchRadius = 0.12,
+}) {
   final cx = expected.dx * raster.width;
   final cy = expected.dy * raster.height;
   final radius = searchRadius * math.max(raster.width, raster.height);
@@ -237,7 +250,10 @@ Offset? findMarker(Raster raster, Offset expected, {double searchRadius = 0.12})
     for (var x = x0; x <= x1; x++) {
       final i = (y * raster.width + x) * 3;
       final luma =
-          (raster.pixels[i] * 77 + raster.pixels[i + 1] * 150 + raster.pixels[i + 2] * 29) >> 8;
+          (raster.pixels[i] * 77 +
+              raster.pixels[i + 1] * 150 +
+              raster.pixels[i + 2] * 29) >>
+          8;
       // Markers are far darker than printed text.
       if (luma > 25) continue;
       sumX += x;

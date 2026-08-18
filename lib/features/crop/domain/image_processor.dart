@@ -5,13 +5,7 @@ import 'package:image/image.dart' as img;
 import 'package:scan2/core/imaging/raster.dart';
 
 /// Scan enhancement presets, in the order they appear in the crop screen.
-enum ScanFilter {
-  original,
-  magic,
-  grayscale,
-  bw,
-  enhance,
-}
+enum ScanFilter { original, magic, grayscale, bw, enhance }
 
 /// Tone + filter settings for one page.
 @immutable
@@ -30,8 +24,7 @@ class ScanAdjustments {
   /// -1..1, neutral at 0.
   final double contrast;
 
-  bool get isNeutralTone =>
-      brightness.abs() < 0.001 && contrast.abs() < 0.001;
+  bool get isNeutralTone => brightness.abs() < 0.001 && contrast.abs() < 0.001;
 
   bool get isNoOp => filter == ScanFilter.original && isNeutralTone;
 
@@ -70,8 +63,9 @@ class ImageProcessor {
     double brightness = 0,
     double contrast = 0,
   }) async {
-    final bytes =
-        imageBytes is Uint8List ? imageBytes : Uint8List.fromList(imageBytes);
+    final bytes = imageBytes is Uint8List
+        ? imageBytes
+        : Uint8List.fromList(imageBytes);
     final adjustments = ScanAdjustments(
       filter: filter,
       brightness: brightness,

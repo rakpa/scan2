@@ -69,8 +69,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         autoCapture: prefs.getBool(_autoCaptureKey) ?? true,
         defaultFilter:
             filterIndex != null && filterIndex < ScanFilter.values.length
-                ? ScanFilter.values[filterIndex]
-                : ScanFilter.magic,
+            ? ScanFilter.values[filterIndex]
+            : ScanFilter.magic,
         shutterSound: prefs.getBool(_shutterKey) ?? true,
       );
     } catch (e) {
@@ -99,7 +99,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 }
 
-final settingsProvider =
-    StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
+final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
+  ref,
+) {
   return SettingsNotifier();
 });

@@ -76,20 +76,24 @@ class _FlatQuad {
   const _FlatQuad(this.values);
 
   factory _FlatQuad.from(Quad q) => _FlatQuad([
-        q.topLeft.dx, q.topLeft.dy,
-        q.topRight.dx, q.topRight.dy,
-        q.bottomRight.dx, q.bottomRight.dy,
-        q.bottomLeft.dx, q.bottomLeft.dy,
-      ]);
+    q.topLeft.dx,
+    q.topLeft.dy,
+    q.topRight.dx,
+    q.topRight.dy,
+    q.bottomRight.dx,
+    q.bottomRight.dy,
+    q.bottomLeft.dx,
+    q.bottomLeft.dy,
+  ]);
 
   final List<double> values;
 
   Quad toQuad() => Quad(
-        topLeft: Offset(values[0], values[1]),
-        topRight: Offset(values[2], values[3]),
-        bottomRight: Offset(values[4], values[5]),
-        bottomLeft: Offset(values[6], values[7]),
-      );
+    topLeft: Offset(values[0], values[1]),
+    topRight: Offset(values[2], values[3]),
+    bottomRight: Offset(values[4], values[5]),
+    bottomLeft: Offset(values[6], values[7]),
+  );
 }
 
 class _ProcessRequest {
@@ -162,8 +166,11 @@ Quad? detectQuadInRaster(Raster source) {
   const analysisEdge = 320;
   final small = source.downscaledTo(analysisEdge);
 
-  final detection = const DocumentQuadDetector()
-      .detect(small.toLuma(), small.width, small.height);
+  final detection = const DocumentQuadDetector().detect(
+    small.toLuma(),
+    small.width,
+    small.height,
+  );
   if (detection == null) return null;
 
   // Crop just inside the detected border so the page does not come out with

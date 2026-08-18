@@ -18,12 +18,18 @@ void main() {
     test('detects a page on the background isolate', () async {
       final scene = buildScene(
         corners: const [
-          Offset(40, 28), Offset(200, 26), Offset(202, 152), Offset(38, 155),
+          Offset(40, 28),
+          Offset(200, 26),
+          Offset(202, 152),
+          Offset(38, 155),
         ],
       );
 
-      final result =
-          await worker.analyze(scene.luma, scene.width, scene.height);
+      final result = await worker.analyze(
+        scene.luma,
+        scene.width,
+        scene.height,
+      );
       expect(result, isNotNull);
       expect(result!.corners, hasLength(4));
       expect(result.confidence, greaterThan(0.5));
@@ -32,7 +38,10 @@ void main() {
     test('drops frames while one is already in flight', () async {
       final scene = buildScene(
         corners: const [
-          Offset(40, 28), Offset(200, 26), Offset(202, 152), Offset(38, 155),
+          Offset(40, 28),
+          Offset(200, 26),
+          Offset(202, 152),
+          Offset(38, 155),
         ],
       );
 
@@ -40,7 +49,11 @@ void main() {
       // refused rather than queued — a queued frame shows edges from the past.
       final first = worker.analyze(scene.luma, scene.width, scene.height);
       expect(worker.isBusy, isTrue);
-      final second = await worker.analyze(scene.luma, scene.width, scene.height);
+      final second = await worker.analyze(
+        scene.luma,
+        scene.width,
+        scene.height,
+      );
       expect(second, isNull, reason: 'in-flight frame should not queue');
 
       await first;
@@ -54,15 +67,21 @@ void main() {
         noise: 1,
         lightingFalloff: 0,
       );
-      final result =
-          await worker.analyze(scene.luma, scene.width, scene.height);
+      final result = await worker.analyze(
+        scene.luma,
+        scene.width,
+        scene.height,
+      );
       expect(result, isNull);
     });
 
     test('analyze after dispose returns null instead of throwing', () async {
       final scene = buildScene(
         corners: const [
-          Offset(40, 28), Offset(200, 26), Offset(202, 152), Offset(38, 155),
+          Offset(40, 28),
+          Offset(200, 26),
+          Offset(202, 152),
+          Offset(38, 155),
         ],
       );
       worker.dispose();

@@ -28,10 +28,10 @@ void main() {
 
   test('documents survive a restart', () async {
     final first = newStore();
-    final doc = await first.createDocumentFromScans(
-      [makeSourceImage('a.jpg'), makeSourceImage('b.jpg')],
-      title: 'Tax return',
-    );
+    final doc = await first.createDocumentFromScans([
+      makeSourceImage('a.jpg'),
+      makeSourceImage('b.jpg'),
+    ], title: 'Tax return');
     expect(doc.pageCount, 2);
 
     // Reopen from disk, as the app would on next launch.
@@ -44,25 +44,26 @@ void main() {
     }
   });
 
-  test('page paths are stored relative, so a moved container still resolves',
-      () async {
-    final store = newStore();
-    await store.createDocumentFromScans([makeSourceImage('a.jpg')]);
+  test(
+    'page paths are stored relative, so a moved container still resolves',
+    () async {
+      final store = newStore();
+      await store.createDocumentFromScans([makeSourceImage('a.jpg')]);
 
-    final manifest =
-        File(p.join(tempRoot.path, 'documents', 'library.json'))
-            .readAsStringSync();
-    // iOS reassigns the container path between installs; an absolute path
-    // baked into the manifest would dangle after the next build.
-    expect(manifest, isNot(contains(tempRoot.path)));
-    expect(manifest, contains('page_000.jpg'));
-  });
+      final manifest = File(
+        p.join(tempRoot.path, 'documents', 'library.json'),
+      ).readAsStringSync();
+      // iOS reassigns the container path between installs; an absolute path
+      // baked into the manifest would dangle after the next build.
+      expect(manifest, isNot(contains(tempRoot.path)));
+      expect(manifest, contains('page_000.jpg'));
+    },
+  );
 
   test('adding pages appends without overwriting existing ones', () async {
     final store = newStore();
     final doc = await store.createDocumentFromScans([makeSourceImage('a.jpg')]);
-    final updated =
-        await store.addPages(doc.id, [makeSourceImage('b.jpg')]);
+    final updated = await store.addPages(doc.id, [makeSourceImage('b.jpg')]);
 
     expect(updated!.pageCount, 2);
     expect(updated.pagePaths.toSet(), hasLength(2));
@@ -70,25 +71,26 @@ void main() {
     expect(File(updated.pagePaths[1]).existsSync(), isTrue);
   });
 
-  test('deleting a document removes its files and its manifest entry',
-      () async {
-    final store = newStore();
-    final doc = await store.createDocumentFromScans([makeSourceImage('a.jpg')]);
-    final pagePath = doc.pagePaths.first;
+  test(
+    'deleting a document removes its files and its manifest entry',
+    () async {
+      final store = newStore();
+      final doc = await store.createDocumentFromScans([
+        makeSourceImage('a.jpg'),
+      ]);
+      final pagePath = doc.pagePaths.first;
 
-    await store.deleteDocument(doc.id);
-    expect(await store.getAllDocuments(), isEmpty);
-    expect(File(pagePath).existsSync(), isFalse);
-    expect((await newStore().getAllDocuments()), isEmpty);
-  });
+      await store.deleteDocument(doc.id);
+      expect(await store.getAllDocuments(), isEmpty);
+      expect(File(pagePath).existsSync(), isFalse);
+      expect((await newStore().getAllDocuments()), isEmpty);
+    },
+  );
 
   test('deleting the last page deletes the document', () async {
     final store = newStore();
     final doc = await store.createDocumentFromScans([makeSourceImage('a.jpg')]);
-    await store.deletePage(
-      documentId: doc.id,
-      pagePath: doc.pagePaths.first,
-    );
+    await store.deletePage(documentId: doc.id, pagePath: doc.pagePaths.first);
     expect(await store.getAllDocuments(), isEmpty);
   });
 
@@ -99,16 +101,20 @@ void main() {
     final second = newStore();
     final b = await second.createDocumentFromScans([makeSourceImage('b.jpg')]);
 
-    expect(b.id, greaterThan(a.id),
-        reason: 'a reused id would make two documents share a page directory');
+    expect(
+      b.id,
+      greaterThan(a.id),
+      reason: 'a reused id would make two documents share a page directory',
+    );
   });
 
   test('a corrupt manifest recovers the pages already on disk', () async {
     final store = newStore();
     await store.createDocumentFromScans([makeSourceImage('a.jpg')]);
 
-    File(p.join(tempRoot.path, 'documents', 'library.json'))
-        .writeAsStringSync('{ this is not json');
+    File(
+      p.join(tempRoot.path, 'documents', 'library.json'),
+    ).writeAsStringSync('{ this is not json');
 
     final recovered = await newStore().getAllDocuments();
     expect(recovered, hasLength(1));

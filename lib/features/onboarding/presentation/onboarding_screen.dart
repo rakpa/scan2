@@ -9,19 +9,22 @@ class OnboardingScreen extends ConsumerWidget {
     (
       icon: Icons.crop_free,
       title: 'Finds the page',
-      body: 'Edges are detected live, so the guide sits on the document '
+      body:
+          'Edges are detected live, so the guide sits on the document '
           'rather than on a fixed frame.',
     ),
     (
       icon: Icons.motion_photos_auto_outlined,
       title: 'Shoots when you are steady',
-      body: 'Hold still and Scan2 takes the shot — no blurred pages from '
+      body:
+          'Hold still and Scan2 takes the shot — no blurred pages from '
           'tapping the shutter.',
     ),
     (
       icon: Icons.auto_fix_high,
       title: 'Cleans it up',
-      body: 'Pages are straightened and enhanced automatically, and stay '
+      body:
+          'Pages are straightened and enhanced automatically, and stay '
           'editable afterwards.',
     ),
   ];
@@ -53,11 +56,7 @@ class OnboardingScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 36),
               for (final point in _points) ...[
-                _Point(
-                  icon: point.icon,
-                  title: point.title,
-                  body: point.body,
-                ),
+                _Point(icon: point.icon, title: point.title, body: point.body),
                 const SizedBox(height: 22),
               ],
               const Spacer(),
@@ -81,11 +80,7 @@ class OnboardingScreen extends ConsumerWidget {
 }
 
 class _Point extends StatelessWidget {
-  const _Point({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
+  const _Point({required this.icon, required this.title, required this.body});
 
   final IconData icon;
   final String title;

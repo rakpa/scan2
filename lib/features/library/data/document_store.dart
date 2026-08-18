@@ -24,7 +24,7 @@ import 'package:scan2/features/library/domain/document_repository.dart';
 /// as a broken-image icon.
 class DocumentStore implements DocumentRepository {
   DocumentStore({DocumentStorage? storage})
-      : _storage = storage ?? DocumentStorage();
+    : _storage = storage ?? DocumentStorage();
 
   static const _manifestName = 'library.json';
   static const _manifestVersion = 2;
@@ -80,7 +80,8 @@ class DocumentStore implements DocumentRepository {
         Document(
           id: id,
           title: entry['title'] as String? ?? 'Scan',
-          createdAt: DateTime.tryParse(entry['createdAt'] as String? ?? '') ??
+          createdAt:
+              DateTime.tryParse(entry['createdAt'] as String? ?? '') ??
               DateTime.now(),
           pages: pages,
           edgesAlreadyApplied: entry['edgesAlreadyApplied'] as bool? ?? false,
@@ -90,8 +91,9 @@ class DocumentStore implements DocumentRepository {
 
     _documents.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final storedNext = raw['nextId'];
-    _nextId =
-        storedNext is int && storedNext > _highestId() ? storedNext : _highestId() + 1;
+    _nextId = storedNext is int && storedNext > _highestId()
+        ? storedNext
+        : _highestId() + 1;
   }
 
   ScanPage? _pageFromJson(Object? raw, String root) {
@@ -105,8 +107,9 @@ class DocumentStore implements DocumentRepository {
     final originalRelative = raw['original'];
     return ScanPage(
       path: p.join(root, relative),
-      originalPath:
-          originalRelative is String ? p.join(root, originalRelative) : null,
+      originalPath: originalRelative is String
+          ? p.join(root, originalRelative)
+          : null,
       quad: _quadFromJson(raw['quad']),
       adjustments: _adjustmentsFromJson(raw['adjustments']),
     );
@@ -124,11 +127,15 @@ class DocumentStore implements DocumentRepository {
   }
 
   static List<double> _quadToJson(Quad q) => [
-        q.topLeft.dx, q.topLeft.dy,
-        q.topRight.dx, q.topRight.dy,
-        q.bottomRight.dx, q.bottomRight.dy,
-        q.bottomLeft.dx, q.bottomLeft.dy,
-      ];
+    q.topLeft.dx,
+    q.topLeft.dy,
+    q.topRight.dx,
+    q.topRight.dy,
+    q.bottomRight.dx,
+    q.bottomRight.dy,
+    q.bottomLeft.dx,
+    q.bottomLeft.dy,
+  ];
 
   static ScanAdjustments _adjustmentsFromJson(Object? raw) {
     if (raw is! Map) return const ScanAdjustments();
@@ -150,27 +157,32 @@ class DocumentStore implements DocumentRepository {
       if (!await root.exists()) return;
 
       for (final entity in root.listSync().whereType<Directory>()) {
-        final id = int.tryParse(p.basename(entity.path).replaceFirst('doc_', ''));
+        final id = int.tryParse(
+          p.basename(entity.path).replaceFirst('doc_', ''),
+        );
         if (id == null) continue;
 
-        final files = entity
-            .listSync()
-            .whereType<File>()
-            .map((f) => f.path)
-            .where((path) => _imageExtensions.contains(p.extension(path)))
-            .toList()
-          ..sort();
+        final files =
+            entity
+                .listSync()
+                .whereType<File>()
+                .map((f) => f.path)
+                .where((path) => _imageExtensions.contains(p.extension(path)))
+                .toList()
+              ..sort();
 
         // Originals sit beside their page as `<name>.orig.jpg`; they are
         // sources, not pages in their own right.
         final pages = files
             .where((path) => !p.basename(path).contains('.orig.'))
-            .map((path) => ScanPage(
-                  path: path,
-                  originalPath: files.contains(_originalPathFor(path))
-                      ? _originalPathFor(path)
-                      : null,
-                ))
+            .map(
+              (path) => ScanPage(
+                path: path,
+                originalPath: files.contains(_originalPathFor(path))
+                    ? _originalPathFor(path)
+                    : null,
+              ),
+            )
             .toList();
         if (pages.isEmpty) continue;
 
@@ -318,11 +330,13 @@ class DocumentStore implements DocumentRepository {
     final existing = _documents[index];
     final added = <ScanPage>[];
     for (var i = 0; i < pages.length; i++) {
-      added.add(await _writeProcessedPage(
-        'doc_$documentId',
-        existing.pageCount + i,
-        pages[i],
-      ));
+      added.add(
+        await _writeProcessedPage(
+          'doc_$documentId',
+          existing.pageCount + i,
+          pages[i],
+        ),
+      );
     }
 
     final updated = existing.copyWith(pages: [...existing.pages, ...added]);
@@ -427,8 +441,7 @@ class DocumentStore implements DocumentRepository {
 
     final doc = _documents[index];
     final removed = doc.pageAt(pagePath);
-    final remaining =
-        doc.pages.where((page) => page.path != pagePath).toList();
+    final remaining = doc.pages.where((page) => page.path != pagePath).toList();
     if (remaining.isEmpty) {
       await deleteDocument(documentId);
       return;
@@ -447,7 +460,11 @@ class DocumentStore implements DocumentRepository {
   }
 
   /// Reorders pages within a document.
-  Future<Document?> reorderPages(int documentId, int oldIndex, int newIndex) async {
+  Future<Document?> reorderPages(
+    int documentId,
+    int oldIndex,
+    int newIndex,
+  ) async {
     await ensureLoaded();
     final index = _documents.indexWhere((d) => d.id == documentId);
     if (index == -1) return null;

@@ -67,8 +67,7 @@ class WebDemoRepository implements DocumentRepository {
     required List<int> bytes,
     Quad? quad,
     ScanAdjustments? adjustments,
-  }) async =>
-      getDocument(documentId);
+  }) async => getDocument(documentId);
 
   @override
   Future<Document?> findDocumentByPagePath(String pagePath) async {
@@ -99,8 +98,7 @@ class WebDemoRepository implements DocumentRepository {
     final index = _documents.indexWhere((d) => d.id == documentId);
     if (index == -1) return;
     final doc = _documents[index];
-    final remaining =
-        doc.pages.where((page) => page.path != pagePath).toList();
+    final remaining = doc.pages.where((page) => page.path != pagePath).toList();
     if (remaining.isEmpty) {
       _documents.removeAt(index);
     } else {
@@ -122,4 +120,21 @@ final documentRepositoryProvider = Provider<DocumentRepository>((ref) {
   final store = DocumentStore();
   ref.onDispose(store.close);
   return store;
+});
+
+/// The library contents.
+///
+/// Held in a provider rather than created inline in a `FutureBuilder`: a
+/// future built during `build` is a *new* future on every rebuild, which resets
+/// the builder to its loading state. Typing in the library's search field
+/// would flash a spinner over the results on every keystroke.
+final documentsProvider = FutureProvider<List<Document>>((ref) {
+  ref.watch(libraryRevisionProvider);
+  return ref.watch(documentRepositoryProvider).getAllDocuments();
+});
+
+/// A single document by id.
+final documentProvider = FutureProvider.family<Document?, int>((ref, id) {
+  ref.watch(libraryRevisionProvider);
+  return ref.watch(documentRepositoryProvider).getDocument(id);
 });

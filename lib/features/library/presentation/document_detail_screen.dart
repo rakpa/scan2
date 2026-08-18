@@ -20,79 +20,72 @@ class DocumentDetailScreen extends ConsumerStatefulWidget {
       _DocumentDetailScreenState();
 }
 
-class _DocumentDetailScreenState
-    extends ConsumerState<DocumentDetailScreen> {
+class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
   static const _exporter = ExportService();
   bool _busy = false;
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(libraryRevisionProvider);
-    final repository = ref.watch(documentRepositoryProvider);
+    // Cached in a provider so an unrelated rebuild (a dialog opening, the
+    // busy flag flipping) does not re-read the document and blank the list.
+    final document = ref.watch(documentProvider(widget.documentId)).valueOrNull;
+    final pages = document?.pages ?? const <ScanPage>[];
 
-    return FutureBuilder<Document?>(
-      future: repository.getDocument(widget.documentId),
-      builder: (context, snapshot) {
-        final document = snapshot.data;
-        final pages = document?.pages ?? const <ScanPage>[];
-
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(document?.title ?? 'Document'),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                tooltip: 'Export PDF',
-                onPressed: document == null || _busy
-                    ? null
-                    : () => _share(document, asPdf: true),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(document?.title ?? 'Document'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            tooltip: 'Export PDF',
+            onPressed: document == null || _busy
+                ? null
+                : () => _share(document, asPdf: true),
+          ),
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Share images',
+            onPressed: document == null || _busy
+                ? null
+                : () => _share(document, asPdf: false),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          if (pages.isEmpty)
+            const Center(child: Text('This document has no pages.'))
+          else
+            ReorderableListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+              itemCount: pages.length,
+              onReorderItem: (oldIndex, newIndex) =>
+                  _reorder(document!, oldIndex, newIndex),
+              itemBuilder: (context, index) {
+                final page = pages[index];
+                return _PageCard(
+                  key: ValueKey(page.path),
+                  page: page,
+                  index: index,
+                  onEdit: () => _edit(document!, page),
+                  onDelete: () => _deletePage(document!, page),
+                );
+              },
+            ),
+          if (_busy)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black38,
+                child: Center(child: CircularProgressIndicator()),
               ),
-              IconButton(
-                icon: const Icon(Icons.ios_share),
-                tooltip: 'Share images',
-                onPressed: document == null || _busy
-                    ? null
-                    : () => _share(document, asPdf: false),
-              ),
-            ],
-          ),
-          body: Stack(
-            children: [
-              if (pages.isEmpty)
-                const Center(child: Text('This document has no pages.'))
-              else
-                ReorderableListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-                  itemCount: pages.length,
-                  onReorderItem: (oldIndex, newIndex) =>
-                      _reorder(document!, oldIndex, newIndex),
-                  itemBuilder: (context, index) {
-                    final page = pages[index];
-                    return _PageCard(
-                      key: ValueKey(page.path),
-                      page: page,
-                      index: index,
-                      onEdit: () => _edit(document!, page),
-                      onDelete: () => _deletePage(document!, page),
-                    );
-                  },
-                ),
-              if (_busy)
-                const Positioned.fill(
-                  child: ColoredBox(
-                    color: Colors.black38,
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                ),
-            ],
-          ),
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => context.push('/camera'),
-            icon: const Icon(Icons.add_a_photo_outlined),
-            label: const Text('Add pages'),
-          ),
-        );
-      },
+            ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push('/camera'),
+        icon: const Icon(Icons.add_a_photo_outlined),
+        label: const Text('Add pages'),
+      ),
     );
   }
 
@@ -135,10 +128,9 @@ class _DocumentDetailScreenState
     );
     if (confirmed != true || !mounted) return;
 
-    await ref.read(documentRepositoryProvider).deletePage(
-          documentId: document.id,
-          pagePath: page.path,
-        );
+    await ref
+        .read(documentRepositoryProvider)
+        .deletePage(documentId: document.id, pagePath: page.path);
     bumpLibrary(ref);
     if (mounted && document.pageCount <= 1) context.pop();
   }
@@ -222,8 +214,10 @@ class _PageCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Page ${index + 1}',
-                        style: theme.textTheme.titleMedium),
+                    Text(
+                      'Page ${index + 1}',
+                      style: theme.textTheme.titleMedium,
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       page.canReedit

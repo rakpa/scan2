@@ -40,8 +40,9 @@ class DocumentStorage {
       await docDir.create(recursive: true);
     }
 
-    final extension =
-        p.extension(sourcePath).isEmpty ? '.jpg' : p.extension(sourcePath);
+    final extension = p.extension(sourcePath).isEmpty
+        ? '.jpg'
+        : p.extension(sourcePath);
     final fileName = 'page_${index.toString().padLeft(3, '0')}$extension';
     final destination = p.join(docDir.path, fileName);
     await File(sourcePath).copy(destination);

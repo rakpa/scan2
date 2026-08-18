@@ -109,8 +109,11 @@ void main() {
       final beforeGap = paperAt(source, 7, 45) - paperAt(source, 117, 45);
       final afterGap = paperAt(out, 7, 45) - paperAt(out, 117, 45);
       expect(beforeGap, greaterThan(90));
-      expect(afterGap.abs(), lessThan(40),
-          reason: 'lighting gradient should be largely removed');
+      expect(
+        afterGap.abs(),
+        lessThan(40),
+        reason: 'lighting gradient should be largely removed',
+      );
 
       // And paper should end up genuinely bright.
       expect(paperAt(out, 117, 45), greaterThan(180));
@@ -126,11 +129,13 @@ void main() {
       int lumaAt(Raster r, int x, int y) => r.pixels[(y * r.width + x) * 3];
 
       // Step across an ink boundary (paper at x=7, ink at x=4).
-      final before =
-          (lumaAt(source, 7, 45) - lumaAt(source, 4, 45)).abs();
+      final before = (lumaAt(source, 7, 45) - lumaAt(source, 4, 45)).abs();
       final after = (lumaAt(out, 7, 45) - lumaAt(out, 4, 45)).abs();
-      expect(after, greaterThan(before),
-          reason: 'unsharp mask should widen the ink/paper gap');
+      expect(
+        after,
+        greaterThan(before),
+        reason: 'unsharp mask should widen the ink/paper gap',
+      );
     });
 
     test('Original leaves pixels untouched', () {

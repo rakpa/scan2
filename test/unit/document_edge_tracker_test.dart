@@ -1,4 +1,3 @@
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
@@ -13,11 +12,11 @@ const _page = Quad(
 
 /// The same page, nudged far enough to count as camera movement.
 Quad _moved(double by) => Quad(
-      topLeft: _page.topLeft + Offset(by, 0),
-      topRight: _page.topRight + Offset(by, 0),
-      bottomRight: _page.bottomRight + Offset(by, 0),
-      bottomLeft: _page.bottomLeft + Offset(by, 0),
-    );
+  topLeft: _page.topLeft + Offset(by, 0),
+  topRight: _page.topRight + Offset(by, 0),
+  bottomRight: _page.bottomRight + Offset(by, 0),
+  bottomLeft: _page.bottomLeft + Offset(by, 0),
+);
 
 void main() {
   group('DocumentEdgeTracker', () {
@@ -62,8 +61,11 @@ void main() {
         tracker.updateFromFrame(detected: _moved(i * 0.05), confidence: 0.95);
         await Future<void>.delayed(const Duration(milliseconds: 40));
       }
-      expect(captures, 0,
-          reason: 'capturing mid-sweep would save a blurred page');
+      expect(
+        captures,
+        0,
+        reason: 'capturing mid-sweep would save a blurred page',
+      );
     });
 
     test('weak detections are ignored', () async {
@@ -85,8 +87,11 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 60));
       }
       expect(captures, 0);
-      expect(tracker.value.hasDocument, isTrue,
-          reason: 'guides stay live even with auto-capture disabled');
+      expect(
+        tracker.value.hasDocument,
+        isTrue,
+        reason: 'guides stay live even with auto-capture disabled',
+      );
       expect(tracker.value.holdProgress, 0);
     });
 

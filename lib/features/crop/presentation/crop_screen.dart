@@ -29,11 +29,11 @@ class CropScreen extends ConsumerStatefulWidget {
   });
 
   factory CropScreen.fromArgs(CropArgs args) => CropScreen(
-        imagePath: args.imagePath,
-        initialQuad: args.initialQuad,
-        initialAdjustments: args.adjustments,
-        edgesAlreadyApplied: args.edgesAlreadyApplied,
-      );
+    imagePath: args.imagePath,
+    initialQuad: args.initialQuad,
+    initialAdjustments: args.adjustments,
+    edgesAlreadyApplied: args.edgesAlreadyApplied,
+  );
 
   final String? imagePath;
   final Quad? initialQuad;
@@ -68,7 +68,8 @@ class _CropScreenState extends ConsumerState<CropScreen> {
   @override
   void initState() {
     super.initState();
-    _quad = widget.initialQuad ??
+    _quad =
+        widget.initialQuad ??
         (widget.edgesAlreadyApplied
             ? const Quad.fullFrame()
             : const Quad.centered());
@@ -160,11 +161,7 @@ class _CropScreenState extends ConsumerState<CropScreen> {
 
     try {
       final raster = await renderPreview(
-        PreviewRequest(
-          source: source,
-          adjustments: _adjustments,
-          quad: _quad,
-        ),
+        PreviewRequest(source: source, adjustments: _adjustments, quad: _quad),
       );
       final image = await rasterToImage(raster);
       if (!mounted || token != _renderToken) {
@@ -224,8 +221,9 @@ class _CropScreenState extends ConsumerState<CropScreen> {
   }
 
   void _resetTone() {
-    setState(() =>
-        _adjustments = _adjustments.copyWith(brightness: 0, contrast: 0));
+    setState(
+      () => _adjustments = _adjustments.copyWith(brightness: 0, contrast: 0),
+    );
     _scheduleEnhancePreview(immediate: true);
   }
 
@@ -353,7 +351,9 @@ class _CropScreenState extends ConsumerState<CropScreen> {
 
   Widget _buildStage() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Colors.white));
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
     }
 
     final error = _loadError;
@@ -388,7 +388,9 @@ class _CropScreenState extends ConsumerState<CropScreen> {
   Widget _buildCropStage() {
     final preview = _cropPreview;
     if (preview == null) {
-      return const Center(child: CircularProgressIndicator(color: Colors.white));
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
     }
 
     return LayoutBuilder(

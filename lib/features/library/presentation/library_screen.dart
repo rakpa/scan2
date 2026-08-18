@@ -20,64 +20,59 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(libraryRevisionProvider);
-    final repository = ref.watch(documentRepositoryProvider);
+    final documentsAsync = ref.watch(documentsProvider);
+    // valueOrNull keeps the previous list on screen while a refresh runs,
+    // instead of blanking the library after every save.
+    final all = documentsAsync.valueOrNull;
+    final documents = _filter(all ?? const []);
+    final loading = all == null && documentsAsync.isLoading;
 
     return Scaffold(
-      body: FutureBuilder<List<Document>>(
-        future: repository.getAllDocuments(),
-        builder: (context, snapshot) {
-          final documents = _filter(snapshot.data ?? const []);
-          final loading =
-              snapshot.connectionState == ConnectionState.waiting;
-
-          return CustomScrollView(
-            slivers: [
-              SliverAppBar.large(
-                title: const Text('Scan2'),
-                actions: [
-                  if (kIsWeb)
-                    const Padding(
-                      padding: EdgeInsets.only(right: 8),
-                      child: Chip(label: Text('DEMO')),
-                    ),
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined),
-                    tooltip: 'Settings',
-                    onPressed: () => context.push('/settings'),
-                  ),
-                ],
-              ),
-              if ((snapshot.data ?? const []).isNotEmpty)
-                SliverToBoxAdapter(child: _buildSearchField()),
-              if (loading)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (documents.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _query.isEmpty
-                      ? const _EmptyLibrary()
-                      : const _NoResults(),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
-                  sliver: SliverList.separated(
-                    itemCount: documents.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) => _DocumentTile(
-                      document: documents[index],
-                      onDeleted: () => _confirmDelete(documents[index]),
-                      onRenamed: () => _promptRename(documents[index]),
-                    ),
-                  ),
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar.large(
+            title: const Text('Scan2'),
+            actions: [
+              if (kIsWeb)
+                const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: Chip(label: Text('DEMO')),
                 ),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings',
+                onPressed: () => context.push('/settings'),
+              ),
             ],
-          );
-        },
+          ),
+          if ((all ?? const []).isNotEmpty)
+            SliverToBoxAdapter(child: _buildSearchField()),
+          if (loading)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (documents.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _query.isEmpty
+                  ? const _EmptyLibrary()
+                  : const _NoResults(),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+              sliver: SliverList.separated(
+                itemCount: documents.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) => _DocumentTile(
+                  document: documents[index],
+                  onDeleted: () => _confirmDelete(documents[index]),
+                  onRenamed: () => _promptRename(documents[index]),
+                ),
+              ),
+            ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/camera'),
@@ -187,8 +182,9 @@ class _DocumentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final thumbnail =
-        document.pages.isNotEmpty ? document.pages.first.path : null;
+    final thumbnail = document.pages.isNotEmpty
+        ? document.pages.first.path
+        : null;
 
     return Card(
       clipBehavior: Clip.antiAlias,

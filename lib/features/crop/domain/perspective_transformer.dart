@@ -17,9 +17,14 @@ import 'package:scan2/features/camera/domain/quad_detector.dart';
 @immutable
 class Homography {
   const Homography._(
-    this.a11, this.a21, this.a31,
-    this.a12, this.a22, this.a32,
-    this.a13, this.a23,
+    this.a11,
+    this.a21,
+    this.a31,
+    this.a12,
+    this.a22,
+    this.a32,
+    this.a13,
+    this.a23,
   );
 
   final double a11, a21, a31;
@@ -27,12 +32,7 @@ class Homography {
   final double a13, a23;
 
   /// Maps (0,0)→[tl], (1,0)→[tr], (1,1)→[br], (0,1)→[bl].
-  factory Homography.unitSquareTo(
-    Offset tl,
-    Offset tr,
-    Offset br,
-    Offset bl,
-  ) {
+  factory Homography.unitSquareTo(Offset tl, Offset tr, Offset br, Offset bl) {
     final sumX = tl.dx - tr.dx + br.dx - bl.dx;
     final sumY = tl.dy - tr.dy + br.dy - bl.dy;
 
@@ -40,9 +40,14 @@ class Homography {
     // divide by zero here.
     if (sumX.abs() < 1e-9 && sumY.abs() < 1e-9) {
       return Homography._(
-        tr.dx - tl.dx, br.dx - tr.dx, tl.dx,
-        tr.dy - tl.dy, br.dy - tr.dy, tl.dy,
-        0, 0,
+        tr.dx - tl.dx,
+        br.dx - tr.dx,
+        tl.dx,
+        tr.dy - tl.dy,
+        br.dy - tr.dy,
+        tl.dy,
+        0,
+        0,
       );
     }
 
@@ -53,9 +58,14 @@ class Homography {
     final den = dx1 * dy2 - dx2 * dy1;
     if (den.abs() < 1e-12) {
       return Homography._(
-        tr.dx - tl.dx, br.dx - tr.dx, tl.dx,
-        tr.dy - tl.dy, br.dy - tr.dy, tl.dy,
-        0, 0,
+        tr.dx - tl.dx,
+        br.dx - tr.dx,
+        tl.dx,
+        tr.dy - tl.dy,
+        br.dy - tr.dy,
+        tl.dy,
+        0,
+        0,
       );
     }
 
@@ -78,10 +88,7 @@ class Homography {
   Offset map(double u, double v) {
     final w = a13 * u + a23 * v + 1;
     if (w.abs() < 1e-12) return Offset.zero;
-    return Offset(
-      (a11 * u + a21 * v + a31) / w,
-      (a12 * u + a22 * v + a32) / w,
-    );
+    return Offset((a11 * u + a21 * v + a31) / w, (a12 * u + a22 * v + a32) / w);
   }
 }
 
@@ -92,8 +99,9 @@ class PerspectiveTransformer {
     required Quad quad,
     Size? imageSize,
   }) async {
-    final bytes =
-        imageBytes is Uint8List ? imageBytes : Uint8List.fromList(imageBytes);
+    final bytes = imageBytes is Uint8List
+        ? imageBytes
+        : Uint8List.fromList(imageBytes);
 
     if (isFullFrame(quad)) return bytes;
 
@@ -116,25 +124,35 @@ class PerspectiveTransformer {
 
 class _SerializableQuad {
   const _SerializableQuad(
-    this.tlX, this.tlY, this.trX, this.trY,
-    this.brX, this.brY, this.blX, this.blY,
+    this.tlX,
+    this.tlY,
+    this.trX,
+    this.trY,
+    this.brX,
+    this.brY,
+    this.blX,
+    this.blY,
   );
 
   factory _SerializableQuad.from(Quad q) => _SerializableQuad(
-        q.topLeft.dx, q.topLeft.dy,
-        q.topRight.dx, q.topRight.dy,
-        q.bottomRight.dx, q.bottomRight.dy,
-        q.bottomLeft.dx, q.bottomLeft.dy,
-      );
+    q.topLeft.dx,
+    q.topLeft.dy,
+    q.topRight.dx,
+    q.topRight.dy,
+    q.bottomRight.dx,
+    q.bottomRight.dy,
+    q.bottomLeft.dx,
+    q.bottomLeft.dy,
+  );
 
   final double tlX, tlY, trX, trY, brX, brY, blX, blY;
 
   Quad toQuad() => Quad(
-        topLeft: Offset(tlX, tlY),
-        topRight: Offset(trX, trY),
-        bottomRight: Offset(brX, brY),
-        bottomLeft: Offset(blX, blY),
-      );
+    topLeft: Offset(tlX, tlY),
+    topRight: Offset(trX, trY),
+    bottomRight: Offset(brX, brY),
+    bottomLeft: Offset(blX, blY),
+  );
 }
 
 class _WarpRequest {
@@ -216,7 +234,10 @@ Raster? warpRaster(Raster src, Quad quad) {
         final top = src.pixels[i00 + c] * (1 - tx) + src.pixels[i10 + c] * tx;
         final bottom =
             src.pixels[i01 + c] * (1 - tx) + src.pixels[i11 + c] * tx;
-        dst.pixels[o + c] = (top * (1 - ty) + bottom * ty).round().clamp(0, 255);
+        dst.pixels[o + c] = (top * (1 - ty) + bottom * ty).round().clamp(
+          0,
+          255,
+        );
       }
       o += 3;
     }

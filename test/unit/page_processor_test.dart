@@ -19,13 +19,16 @@ void main() {
     temp = Directory.systemTemp.createTempSync('scan2_page_processor');
     final scene = buildColorScene(
       corners: const [
-        Offset(210, 190), Offset(700, 210), Offset(780, 1000), Offset(130, 970),
+        Offset(210, 190),
+        Offset(700, 210),
+        Offset(780, 1000),
+        Offset(130, 970),
       ],
     );
     capturePath = '${temp.path}/capture.jpg';
-    File(capturePath).writeAsBytesSync(
-      img.encodeJpg(scene.toImage(), quality: 92),
-    );
+    File(
+      capturePath,
+    ).writeAsBytesSync(img.encodeJpg(scene.toImage(), quality: 92));
   });
 
   tearDown(() {

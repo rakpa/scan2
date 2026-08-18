@@ -21,8 +21,12 @@ class WorkerDetection {
 /// thread. A persistent isolate is used rather than `compute` so that frames
 /// do not each pay isolate spawn cost.
 class DetectionWorker {
-  DetectionWorker._(this._isolate, this._requests, this._responses,
-      Stream<dynamic> incoming) {
+  DetectionWorker._(
+    this._isolate,
+    this._requests,
+    this._responses,
+    Stream<dynamic> incoming,
+  ) {
     _subscription = incoming.listen(_onResponse);
   }
 
@@ -46,9 +50,11 @@ class DetectionWorker {
     // The isolate's first message is the port to send frames to. Bounded, so
     // a failed spawn surfaces as an error instead of hanging camera startup.
     try {
-      final requests = await incoming
-          .firstWhere((m) => m is SendPort)
-          .timeout(const Duration(seconds: 5)) as SendPort;
+      final requests =
+          await incoming
+                  .firstWhere((m) => m is SendPort)
+                  .timeout(const Duration(seconds: 5))
+              as SendPort;
       return DetectionWorker._(isolate, requests, responses, incoming);
     } catch (e) {
       isolate.kill(priority: Isolate.immediate);
@@ -64,11 +70,7 @@ class DetectionWorker {
 
   /// Analyses one luminance grid. Returns null if a request is already in
   /// flight or the worker has been disposed.
-  Future<WorkerDetection?> analyze(
-    Uint8List luma,
-    int width,
-    int height,
-  ) {
+  Future<WorkerDetection?> analyze(Uint8List luma, int width, int height) {
     if (_disposed || _pending != null) return Future.value(null);
     final completer = Completer<WorkerDetection?>();
     _pending = completer;

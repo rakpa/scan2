@@ -130,8 +130,9 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       final permission = await Permission.camera.request();
       if (!permission.isGranted) {
         if (!mounted) return;
-        setState(() => _cameraError =
-            'Scan2 needs camera access to scan documents.');
+        setState(
+          () => _cameraError = 'Scan2 needs camera access to scan documents.',
+        );
         return;
       }
 
@@ -184,8 +185,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     // Reused across resumes: disposing one the widget tree is still listening
     // to would leave a ValueListenableBuilder bound to a dead notifier until
     // the next rebuild.
-    final tracker = _tracker ??
-        DocumentEdgeTracker(onAutoCapture: _onAutoCapture);
+    final tracker =
+        _tracker ?? DocumentEdgeTracker(onAutoCapture: _onAutoCapture);
     _tracker = tracker;
     tracker
       ..setAutoCapture(ref.read(settingsProvider).autoCapture)
@@ -210,15 +211,19 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       _analyzing = true;
 
       final orientation = _deviceOrientationDegrees(controller);
-      _analyzer.analyze(image, camera, orientation).then((result) {
-        if (!mounted || result == null) return;
-        _tracker?.updateFromFrame(
-          detected: result.quad,
-          confidence: result.confidence,
-        );
-      }).catchError((Object e) {
-        debugPrint('Frame analysis failed: $e');
-      }).whenComplete(() => _analyzing = false);
+      _analyzer
+          .analyze(image, camera, orientation)
+          .then((result) {
+            if (!mounted || result == null) return;
+            _tracker?.updateFromFrame(
+              detected: result.quad,
+              confidence: result.confidence,
+            );
+          })
+          .catchError((Object e) {
+            debugPrint('Frame analysis failed: $e');
+          })
+          .whenComplete(() => _analyzing = false);
     });
   }
 
@@ -280,17 +285,17 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       if (!mounted) return;
       setState(() {
         _processingCount--;
-        _batch.add(_PendingPage(
-          originalPath: file.path,
-          processed: processed,
-        ));
+        _batch.add(_PendingPage(originalPath: file.path, processed: processed));
       });
     } catch (e) {
       debugPrint('Capture failed: $e');
       tracker?.releaseCaptureLock();
       if (mounted) {
-        setState(() =>
-            _processingCount = _processingCount > 0 ? _processingCount - 1 : 0);
+        setState(
+          () => _processingCount = _processingCount > 0
+              ? _processingCount - 1
+              : 0,
+        );
         _showMessage('Capture failed. Try again.');
         unawaited(_startStream());
       }
@@ -528,10 +533,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                 // The overlay is a child of CameraPreview so it shares the
                 // preview's coordinate space; normalized corners then land on
                 // the actual document pixels rather than on the screen box.
-                child: CameraPreview(
-                  controller,
-                  child: _buildOverlay(),
-                ),
+                child: CameraPreview(controller, child: _buildOverlay()),
               ),
             ),
           ),
@@ -632,8 +634,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
             builder: (context, state, _) {
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 9,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.55),
                   borderRadius: BorderRadius.circular(24),
@@ -680,10 +684,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.transparent,
-              Colors.black.withValues(alpha: 0.65),
-            ],
+            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.65)],
           ),
         ),
         child: SafeArea(
@@ -796,8 +797,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
               ),
               child: Text('Done (${_batch.length})'),
             ),
@@ -834,8 +837,7 @@ class _ShutterButton extends StatelessWidget {
                 value: progress <= 0.01 ? 0 : progress,
                 strokeWidth: 4,
                 backgroundColor: Colors.white24,
-                valueColor:
-                    const AlwaysStoppedAnimation(Color(0xFF4CAF50)),
+                valueColor: const AlwaysStoppedAnimation(Color(0xFF4CAF50)),
               ),
             ),
             AnimatedContainer(
@@ -875,9 +877,7 @@ class _CircleButton extends StatelessWidget {
     return Tooltip(
       message: tooltip ?? '',
       child: Material(
-        color: active
-            ? Colors.white
-            : Colors.black.withValues(alpha: 0.4),
+        color: active ? Colors.white : Colors.black.withValues(alpha: 0.4),
         shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -956,8 +956,11 @@ class _CameraErrorView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.no_photography_outlined,
-                  size: 56, color: Colors.white54),
+              const Icon(
+                Icons.no_photography_outlined,
+                size: 56,
+                color: Colors.white54,
+              ),
               const SizedBox(height: 16),
               Text(
                 message,
@@ -971,8 +974,10 @@ class _CameraErrorView extends StatelessWidget {
               ),
               TextButton(
                 onPressed: () => context.pop(),
-                child: const Text('Go back',
-                    style: TextStyle(color: Colors.white70)),
+                child: const Text(
+                  'Go back',
+                  style: TextStyle(color: Colors.white70),
+                ),
               ),
             ],
           ),
@@ -995,8 +1000,11 @@ class _WebDemoCamera extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.photo_camera_outlined,
-                  size: 96, color: Theme.of(context).disabledColor),
+              Icon(
+                Icons.photo_camera_outlined,
+                size: 96,
+                color: Theme.of(context).disabledColor,
+              ),
               const SizedBox(height: 16),
               const Text(
                 'Scanning needs a device camera.\n'

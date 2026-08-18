@@ -46,10 +46,9 @@ class ExportService {
   /// Shares [document] as a PDF.
   Future<void> sharePdf(Document document) async {
     final file = await buildPdf(document);
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'application/pdf')],
-      subject: document.title,
-    );
+    await Share.shareXFiles([
+      XFile(file.path, mimeType: 'application/pdf'),
+    ], subject: document.title);
   }
 
   /// Shares the page images themselves, for people who want the JPEGs.
@@ -95,10 +94,8 @@ Future<Uint8List> _buildPdfBytes(List<_SizedImage> images) async {
     document.addPage(
       pw.Page(
         pageFormat: _pageFormatFor(image),
-        build: (context) => pw.Image(
-          pw.MemoryImage(image.bytes),
-          fit: pw.BoxFit.fill,
-        ),
+        build: (context) =>
+            pw.Image(pw.MemoryImage(image.bytes), fit: pw.BoxFit.fill),
       ),
     );
   }

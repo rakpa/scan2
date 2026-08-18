@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:scan2/core/imaging/raster.dart';
@@ -30,8 +29,7 @@ class PreviewSource {
   final int sourceWidth;
   final int sourceHeight;
 
-  double get sourceAspect =>
-      sourceHeight == 0 ? 1 : sourceWidth / sourceHeight;
+  double get sourceAspect => sourceHeight == 0 ? 1 : sourceWidth / sourceHeight;
 }
 
 /// Decodes [bytes] once into a preview-sized raster, off the UI isolate.

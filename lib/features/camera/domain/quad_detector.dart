@@ -22,18 +22,18 @@ class Quad {
 
   /// Default frame inset from the preview edges.
   const Quad.centered()
-      : topLeft = const Offset(0.12, 0.18),
-        topRight = const Offset(0.88, 0.18),
-        bottomRight = const Offset(0.88, 0.82),
-        bottomLeft = const Offset(0.12, 0.82);
+    : topLeft = const Offset(0.12, 0.18),
+      topRight = const Offset(0.88, 0.18),
+      bottomRight = const Offset(0.88, 0.82),
+      bottomLeft = const Offset(0.12, 0.82);
 
   /// Full-bleed rectangle — used when edges were already applied by the
   /// native scanner (VisionKit / ML Kit).
   const Quad.fullFrame()
-      : topLeft = Offset.zero,
-        topRight = const Offset(1, 0),
-        bottomRight = const Offset(1, 1),
-        bottomLeft = const Offset(0, 1);
+    : topLeft = Offset.zero,
+      topRight = const Offset(1, 0),
+      bottomRight = const Offset(1, 1),
+      bottomLeft = const Offset(0, 1);
 
   factory Quad.fromCorners(List<Offset> corners) {
     assert(corners.length == 4);
@@ -147,8 +147,7 @@ class QuadDetector {
 
     final gray = img.grayscale(decoded);
     final targetW = _analysisWidth;
-    final targetH =
-        (targetW * gray.height / gray.width).round().clamp(48, 360);
+    final targetH = (targetW * gray.height / gray.width).round().clamp(48, 360);
     final resized = img.copyResize(gray, width: targetW, height: targetH);
 
     final lum = Uint8List(targetW * targetH);

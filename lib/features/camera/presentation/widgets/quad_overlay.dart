@@ -107,7 +107,12 @@ class _QuadPainter extends CustomPainter {
 
   /// A short stroke from [corner] toward [towards], length-capped so it stays
   /// a bracket rather than tracing the whole edge.
-  void _drawBracketArm(Canvas canvas, Offset corner, Offset towards, Paint paint) {
+  void _drawBracketArm(
+    Canvas canvas,
+    Offset corner,
+    Offset towards,
+    Paint paint,
+  ) {
     final delta = towards - corner;
     final length = delta.distance;
     if (length < 1) return;
