@@ -13,18 +13,28 @@ class QuadDetection {
 
 /// Pure-Dart document boundary detector (no ML / OpenCV dependency).
 ///
-/// Primary strategy — the one real scanners use — is line-based:
+/// The strategy is line-based, as in most production scanners:
 ///  1. 3×3 box blur, then Sobel gradients.
 ///  2. Strong gradient pixels vote in a Hough space for near-vertical and
 ///     near-horizontal lines (document edges up to ~30° of tilt).
-///  3. The best well-separated left/right and top/bottom line pairs are
-///     intersected into the document quad.
-/// This stays reliable on textured desks, partial contrast, and documents
-/// that fill most of the frame — cases where region-based segmentation fails.
+///  3. Candidate quads are built from those lines and *scored*, and the best
+///     scoring quad wins.
+///
+/// Step 3 is the part that matters. Choosing the highest-voted line pair —
+/// the obvious approach — reliably picks printed text lines instead of the
+/// page border: body text is high-contrast, dead straight, and there is a lot
+/// of it, so it outvotes the paper edge. Two things prevent that here:
+///
+///  * **Polarity.** Votes are split by gradient sign, so the left edge of a
+///    light page (dark→light going right) lands in a different accumulator
+///    than its right edge. A text line produces both signs a few pixels
+///    apart and cannot supply a consistent left/right pair.
+///  * **Verification.** Every candidate quad is scored on whether real
+///    luminance steps of the *expected* direction exist along its perimeter,
+///    not on how many gradient pixels voted for its lines.
 ///
 /// A contrast-blob fallback (largest connected component + extreme corners)
-/// covers soft-edged documents on plain backgrounds when no line quad is
-/// found.
+/// covers soft-edged documents on plain backgrounds when no line quad scores.
 class DocumentQuadDetector {
   const DocumentQuadDetector();
 
@@ -34,6 +44,10 @@ class DocumentQuadDetector {
   /// Hough slope range (± tan 31°) for "near-axis" document edges.
   static const _maxSlope = 0.6;
   static const _slopeBins = 21;
+
+  /// Candidate lines taken from each polarity accumulator. Four per side
+  /// keeps the quad search at a few hundred cheap evaluations.
+  static const _linesPerSide = 4;
 
   /// Detects the dominant document quad in a grayscale [lum] grid of
   /// [width]×[height]. Returns null when nothing document-like is found.
@@ -72,10 +86,11 @@ class DocumentQuadDetector {
   // ---------------------------------------------------------------------
 
   QuadDetection? _detectByLines(Uint8List lum, int w, int h) {
-    // Sobel gradients.
     final gx = Int16List(w * h);
     final gy = Int16List(w * h);
-    var magSum = 0;
+    // Magnitudes bucketed by 4 (max |sx|+|sy| is 2040) to pick a percentile
+    // without keeping the full magnitude array around.
+    final magHistogram = Int32List(512);
     var magCount = 0;
     for (var y = 1; y < h - 1; y++) {
       final r0 = (y - 1) * w;
@@ -89,23 +104,39 @@ class DocumentQuadDetector {
         final sy = (g + 2 * hh + i) - (a + 2 * b + c);
         gx[r1 + x] = sx;
         gy[r1 + x] = sy;
-        magSum += sx.abs() + sy.abs();
+        magHistogram[math.min(511, (sx.abs() + sy.abs()) >> 2)]++;
         magCount++;
       }
     }
     if (magCount == 0) return null;
-    final meanMag = magSum / magCount;
-    final threshold = math.max(60.0, meanMag * 2.6);
 
-    // Hough accumulators. Near-vertical lines: x = a*y + b.
-    // Near-horizontal lines: y = c*x + d.
+    // Keep roughly the strongest 10% of gradient pixels. A fixed threshold
+    // cannot serve both a black folder on a white desk and a white page on a
+    // light one; a percentile adapts to whatever contrast the scene has, and
+    // the candidate scoring downstream rejects what turns out to be noise.
+    final targetVoters = math.max(1, (magCount * 0.35).round());
+    var threshold = 20.0;
+    var running = 0;
+    for (var bucket = 511; bucket >= 0; bucket--) {
+      running += magHistogram[bucket];
+      if (running >= targetVoters) {
+        threshold = math.max(20.0, (bucket << 2).toDouble());
+        break;
+      }
+    }
+
+    // Four accumulators: near-vertical lines (x = a·y + b) and near-horizontal
+    // lines (y = c·x + d), each split by the sign of the crossing gradient.
     final bOffset = (_maxSlope * h).ceil();
     final bCount = w + 2 * bOffset;
     final dOffset = (_maxSlope * w).ceil();
     final dCount = h + 2 * dOffset;
-    final accV = Int32List(_slopeBins * bCount);
-    final accH = Int32List(_slopeBins * dCount);
+    final accVPos = Int32List(_slopeBins * bCount);
+    final accVNeg = Int32List(_slopeBins * bCount);
+    final accHPos = Int32List(_slopeBins * dCount);
+    final accHNeg = Int32List(_slopeBins * dCount);
 
+    final slopeStep = 2 * _maxSlope / (_slopeBins - 1);
     for (var y = 1; y < h - 1; y++) {
       final row = y * w;
       for (var x = 1; x < w - 1; x++) {
@@ -115,94 +146,137 @@ class DocumentQuadDetector {
         if (mag < threshold) continue;
 
         if (sx.abs() >= sy.abs()) {
-          // Vertical-ish edge (strong horizontal gradient).
+          final acc = sx > 0 ? accVPos : accVNeg;
           for (var s = 0; s < _slopeBins; s++) {
-            final a = -_maxSlope + s * (2 * _maxSlope / (_slopeBins - 1));
+            final a = -_maxSlope + s * slopeStep;
             final b = (x - a * y + bOffset).round();
-            if (b >= 0 && b < bCount) accV[s * bCount + b]++;
+            if (b >= 0 && b < bCount) acc[s * bCount + b]++;
           }
         } else {
+          final acc = sy > 0 ? accHPos : accHNeg;
           for (var s = 0; s < _slopeBins; s++) {
-            final c = -_maxSlope + s * (2 * _maxSlope / (_slopeBins - 1));
+            final c = -_maxSlope + s * slopeStep;
             final d = (y - c * x + dOffset).round();
-            if (d >= 0 && d < dCount) accH[s * dCount + d]++;
+            if (d >= 0 && d < dCount) acc[s * dCount + d]++;
           }
         }
       }
     }
 
-    final vLines = _topLines(
-      accV,
-      bCount,
-      offset: bOffset,
-      minVotes: math.max(8, (0.22 * h).round()),
-    );
-    final hLines = _topLines(
-      accH,
-      dCount,
-      offset: dOffset,
-      minVotes: math.max(8, (0.22 * w).round()),
-    );
-    if (vLines.length < 2 || hLines.length < 2) return null;
+    final minVotesV = math.max(6, (0.15 * h).round());
+    final minVotesH = math.max(6, (0.15 * w).round());
+    final vPos = _topLines(accVPos, bCount, offset: bOffset, minVotes: minVotesV);
+    final vNeg = _topLines(accVNeg, bCount, offset: bOffset, minVotes: minVotesV);
+    final hPos = _topLines(accHPos, dCount, offset: dOffset, minVotes: minVotesH);
+    final hNeg = _topLines(accHNeg, dCount, offset: dOffset, minVotes: minVotesH);
 
-    // Pick the strongest pair with real separation (a document has two
-    // distinct edges, not one edge counted twice).
-    final vPair = _bestPair(vLines, midSpan: h, separation: 0.30 * w);
-    final hPair = _bestPair(hLines, midSpan: w, separation: 0.30 * h);
-    if (vPair == null || hPair == null) return null;
+    // Hypothesis A: page brighter than its surroundings — the left/top borders
+    // are rising edges, the right/bottom borders falling. Hypothesis B is a
+    // dark page on a light surface, where every sign flips.
+    final best = _bestCandidate(lum, w, h, vPos, vNeg, hPos, hNeg, true) ??
+        _bestCandidate(lum, w, h, vNeg, vPos, hNeg, hPos, false);
+    return best;
+  }
 
-    final (left, right) = vPair;
-    final (top, bottom) = hPair;
+  /// Searches (left × right × top × bottom) line combinations and returns the
+  /// best-scoring valid quad, or null if none passes.
+  QuadDetection? _bestCandidate(
+    Uint8List lum,
+    int w,
+    int h,
+    List<_HoughLine> leftLines,
+    List<_HoughLine> rightLines,
+    List<_HoughLine> topLines,
+    List<_HoughLine> bottomLines,
+    bool pageIsBright,
+  ) {
+    if (leftLines.isEmpty ||
+        rightLines.isEmpty ||
+        topLines.isEmpty ||
+        bottomLines.isEmpty) {
+      return null;
+    }
 
-    final corners = <Offset>[];
-    for (final v in [left, right]) {
-      for (final hLine in [top, bottom]) {
-        final p = _intersect(v, hLine);
-        if (p == null) return null;
-        corners.add(p);
+    QuadDetection? best;
+    var bestScore = 0.0;
+
+    for (final left in leftLines) {
+      for (final right in rightLines) {
+        // A page is at least this wide, and its sides do not cross.
+        final lx = left.positionAt(h / 2);
+        final rx = right.positionAt(h / 2);
+        if (rx - lx < 0.25 * w) continue;
+        if ((left.slope - right.slope).abs() > 0.5) continue;
+
+        for (final top in topLines) {
+          for (final bottom in bottomLines) {
+            final ty = top.positionAt(w / 2);
+            final by = bottom.positionAt(w / 2);
+            if (by - ty < 0.25 * h) continue;
+            if ((top.slope - bottom.slope).abs() > 0.5) continue;
+
+            final corners = <Offset>[];
+            var degenerate = false;
+            for (final v in [left, right]) {
+              for (final hLine in [top, bottom]) {
+                final p = _intersect(v, hLine);
+                if (p == null) {
+                  degenerate = true;
+                  break;
+                }
+                corners.add(p);
+              }
+              if (degenerate) break;
+            }
+            if (degenerate) continue;
+
+            // Corners may sit slightly outside the frame when a page runs off
+            // the edge, but not wildly so.
+            var outOfFrame = false;
+            for (final p in corners) {
+              if (p.dx < -0.25 * w || p.dx > 1.25 * w) outOfFrame = true;
+              if (p.dy < -0.25 * h || p.dy > 1.25 * h) outOfFrame = true;
+            }
+            if (outOfFrame) continue;
+
+            final ordered = orderCorners(corners);
+            if (!_isConvex(ordered)) continue;
+
+            final areaRatio = _polygonArea(ordered) / (w * h);
+            if (areaRatio < _minAreaRatio || areaRatio > 0.99) continue;
+
+            final support =
+                _signedEdgeSupport(lum, w, h, ordered, pageIsBright);
+            if (support.consistency < 0.55) continue;
+
+            // Prefer strong, consistent borders; break ties toward the larger
+            // quad, because the page always encloses whatever is printed on it.
+            final score = support.consistency * 0.55 +
+                math.min(support.contrast / 40, 1.0) * 0.25 +
+                math.min(areaRatio * 1.6, 1.0) * 0.20;
+
+            if (score > bestScore) {
+              bestScore = score;
+              best = QuadDetection(
+                corners: ordered
+                    .map((p) => Offset(
+                          (p.dx / w).clamp(0.0, 1.0),
+                          (p.dy / h).clamp(0.0, 1.0),
+                        ))
+                    .toList(growable: false),
+                confidence: score.clamp(0.0, 0.98),
+              );
+            }
+          }
+        }
       }
     }
 
-    // Reject corners far outside the frame or degenerate quads.
-    for (final p in corners) {
-      if (p.dx < -0.2 * w || p.dx > 1.2 * w) return null;
-      if (p.dy < -0.2 * h || p.dy > 1.2 * h) return null;
-    }
-    final ordered = orderCorners(corners);
-    if (!_isConvex(ordered)) return null;
-
-    final areaRatio = _polygonArea(ordered) / (w * h);
-    if (areaRatio < _minAreaRatio || areaRatio > 0.98) return null;
-
-    // Support: how much of each edge's span is backed by votes.
-    final supports = [
-      left.votes / h,
-      right.votes / h,
-      top.votes / w,
-      bottom.votes / w,
-    ].map((s) => s.clamp(0.0, 1.0)).toList();
-    final avg = supports.reduce((a, b) => a + b) / 4;
-    final weakest = supports.reduce(math.min);
-
-    final confidence =
-        (0.20 + 0.45 * avg + 0.20 * weakest + 0.15 * math.min(areaRatio * 2, 1))
-            .clamp(0.0, 0.97);
-
-    // Require a meaningful edge vote floor — random room edges rarely pass.
-    if (avg < 0.35 || weakest < 0.18) return null;
-
-    return QuadDetection(
-      corners: ordered
-          .map((p) => Offset(
-                (p.dx / w).clamp(0.0, 1.0),
-                (p.dy / h).clamp(0.0, 1.0),
-              ))
-          .toList(growable: false),
-      confidence: confidence,
-    );
+    if (best == null || bestScore < 0.45) return null;
+    return best;
   }
 
-  /// Extracts up to 6 distinct peaks from a Hough accumulator.
+  /// Extracts up to [_linesPerSide] distinct peaks from a Hough accumulator.
   List<_HoughLine> _topLines(
     Int32List acc,
     int interceptCount, {
@@ -219,7 +293,7 @@ class DocumentQuadDetector {
       return v;
     }
 
-    for (var n = 0; n < 6; n++) {
+    for (var n = 0; n < _linesPerSide; n++) {
       var bestVotes = 0;
       var bestS = -1;
       var bestB = -1;
@@ -254,32 +328,6 @@ class DocumentQuadDetector {
       }
     }
     return lines;
-  }
-
-  /// Best-voted pair of lines whose positions at mid-span differ by at least
-  /// [separation]. Returns (nearer, farther) by mid-span position.
-  (_HoughLine, _HoughLine)? _bestPair(
-    List<_HoughLine> lines, {
-    required int midSpan,
-    required double separation,
-  }) {
-    (_HoughLine, _HoughLine)? best;
-    var bestScore = 0;
-    for (var i = 0; i < lines.length; i++) {
-      for (var j = i + 1; j < lines.length; j++) {
-        final pi = lines[i].positionAt(midSpan / 2);
-        final pj = lines[j].positionAt(midSpan / 2);
-        if ((pi - pj).abs() < separation) continue;
-        // Document edges are roughly parallel.
-        if ((lines[i].slope - lines[j].slope).abs() > 0.45) continue;
-        final score = lines[i].votes + lines[j].votes;
-        if (score > bestScore) {
-          bestScore = score;
-          best = pi < pj ? (lines[i], lines[j]) : (lines[j], lines[i]);
-        }
-      }
-    }
-    return best;
   }
 
   /// Intersection of a near-vertical line (x = a·y + b) with a
@@ -320,7 +368,6 @@ class DocumentQuadDetector {
 
     final corners = _extremeCorners(component, width);
     if (corners == null) return null;
-
     if (!_isConvex(corners)) return null;
 
     final quadArea = _polygonArea(corners);
@@ -328,17 +375,21 @@ class DocumentQuadDetector {
     if (quadAreaRatio < _minAreaRatio) return null;
 
     final solidity = (component.area / math.max(quadArea, 1)).clamp(0.0, 1.0);
-    if (solidity < 0.55) return null;
+    if (solidity < 0.62) return null;
 
-    final edgeSupport = _edgeSupport(blurred, width, height, corners);
+    // The blob path has no polarity information, so accept whichever
+    // orientation of the border step is the stronger.
+    final bright = _signedEdgeSupport(blurred, width, height, corners, true);
+    final dark = _signedEdgeSupport(blurred, width, height, corners, false);
+    final support =
+        bright.consistency >= dark.consistency ? bright : dark;
+    if (support.consistency < 0.45) return null;
 
-    final confidence = (0.20 +
-            0.35 * edgeSupport +
+    final confidence = (0.15 +
+            0.40 * support.consistency +
             0.25 * solidity +
             0.10 * math.min(quadAreaRatio * 2.5, 1.0))
-        .clamp(0.0, 0.90);
-
-    if (edgeSupport < 0.40 || solidity < 0.62) return null;
+        .clamp(0.0, 0.85);
 
     final normalized = corners
         .map((c) => Offset(
@@ -524,16 +575,21 @@ class DocumentQuadDetector {
     return area.abs() / 2;
   }
 
-  /// Fraction of samples along the quad perimeter that sit on a strong
-  /// luminance gradient (a real paper edge).
-  double _edgeSupport(
+  /// Measures the luminance step across each edge of [corners], requiring the
+  /// step to run in the direction a page border would.
+  ///
+  /// This is the check that separates a page border from a line of text: text
+  /// has paper on *both* sides, so its "inside" and "outside" samples match.
+  _EdgeSupport _signedEdgeSupport(
     Uint8List lum,
     int w,
     int h,
     List<Offset> corners,
+    bool pageIsBright,
   ) {
-    var supported = 0;
+    var consistent = 0;
     var total = 0;
+    var contrastSum = 0.0;
 
     double lumAt(double x, double y) {
       final xi = x.round().clamp(0, w - 1);
@@ -541,26 +597,59 @@ class DocumentQuadDetector {
       return lum[yi * w + xi].toDouble();
     }
 
+    // Sampling offset scales with the frame so it clears edge blur without
+    // reaching into the next feature.
+    final probe = math.max(2.0, math.min(w, h) * 0.02);
+
+    final center = Offset(
+      corners.map((c) => c.dx).reduce((a, b) => a + b) / 4,
+      corners.map((c) => c.dy).reduce((a, b) => a + b) / 4,
+    );
+
     for (var i = 0; i < 4; i++) {
       final a = corners[i];
       final b = corners[(i + 1) % 4];
       final edge = b - a;
       final len = edge.distance;
       if (len < 1) continue;
-      // Unit normal to the edge — we compare luminance on both sides.
-      final normal = Offset(-edge.dy / len, edge.dx / len);
-      final steps = math.max(6, len ~/ 3);
-      for (var s = 1; s < steps; s++) {
+
+      var normal = Offset(-edge.dy / len, edge.dx / len);
+      // Point the normal outward, away from the quad's centre.
+      final mid = a + edge * 0.5;
+      if ((mid + normal - center).distance < (mid - normal - center).distance) {
+        normal = -normal;
+      }
+
+      final steps = math.max(8, len ~/ 3);
+      // Skip the ends: corners are where two edges blur together.
+      for (var s = 2; s < steps - 1; s++) {
         final t = s / steps;
         final p = a + edge * t;
-        final inside = lumAt(p.dx + normal.dx * 2, p.dy + normal.dy * 2);
-        final outside = lumAt(p.dx - normal.dx * 2, p.dy - normal.dy * 2);
+        final inside = lumAt(p.dx - normal.dx * probe, p.dy - normal.dy * probe);
+        final outside = lumAt(p.dx + normal.dx * probe, p.dy + normal.dy * probe);
+        final diff = pageIsBright ? inside - outside : outside - inside;
         total++;
-        if ((inside - outside).abs() > 10) supported++;
+        contrastSum += diff;
+        if (diff > 8) consistent++;
       }
     }
-    return total == 0 ? 0 : supported / total;
+
+    if (total == 0) return const _EdgeSupport(consistency: 0, contrast: 0);
+    return _EdgeSupport(
+      consistency: consistent / total,
+      contrast: contrastSum / total,
+    );
   }
+}
+
+class _EdgeSupport {
+  const _EdgeSupport({required this.consistency, required this.contrast});
+
+  /// Fraction of perimeter samples showing a step in the expected direction.
+  final double consistency;
+
+  /// Mean signed luminance step across the border.
+  final double contrast;
 }
 
 class _Component {
