@@ -117,7 +117,7 @@ class _TopBar extends StatelessWidget {
             icon: const Icon(Icons.menu_rounded, color: Brand.ink, size: 26),
           ),
           const Expanded(
-            child: ScanellaWordmark(fontSize: 26),
+            child: ScanellaWordmark(fontSize: BrandType.wordmarkCompact),
           ),
           IconButton(
             tooltip: 'Scanella Pro',
@@ -172,20 +172,13 @@ class _TopBar extends StatelessWidget {
           children: [
             Icon(Icons.notifications_none_rounded, size: 36, color: Brand.grey),
             SizedBox(height: 12),
-            Text(
-              "You're all caught up",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Brand.ink,
-              ),
-            ),
+            Text("You're all caught up", style: BrandType.title),
             SizedBox(height: 6),
             Text(
               'Scanella keeps your documents on this device. There is nothing '
               'waiting for you.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Brand.grey, height: 1.4),
+              style: BrandType.subtitle,
             ),
           ],
         ),
@@ -212,24 +205,11 @@ class _WelcomeBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Welcome back!',
-                  style: TextStyle(
-                    color: Brand.blue,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text('Welcome back!', style: BrandType.link),
                 SizedBox(height: 6),
                 Text(
                   "Let's scan something awesome today.",
-                  style: TextStyle(
-                    color: Brand.ink,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    height: 1.2,
-                    letterSpacing: -0.4,
-                  ),
+                  style: BrandType.headline,
                 ),
               ],
             ),
@@ -361,23 +341,9 @@ class _ActionCard extends StatelessWidget {
                 child: Icon(icon, color: accent, size: 24),
               ),
               const SizedBox(height: 14),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Brand.ink,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+              Text(title, style: BrandType.title),
               const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: Brand.grey,
-                  fontSize: 13,
-                  height: 1.35,
-                ),
-              ),
+              Text(subtitle, style: BrandType.caption),
             ],
           ),
         ),
@@ -398,25 +364,12 @@ class _RecentHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),
       child: Row(
         children: [
-          const Text(
-            'Recent Documents',
-            style: TextStyle(
-              color: Brand.ink,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
+          const Text('Recent Documents', style: BrandType.title),
           const Spacer(),
           if (!empty)
             TextButton(
               onPressed: onViewAll,
-              child: const Text(
-                'View All >',
-                style: TextStyle(
-                  color: Brand.blue,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              child: const Text('View All >', style: BrandType.link),
             ),
         ],
       ),
@@ -433,7 +386,7 @@ class _EmptyRecent extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(20, 8, 20, 0),
       child: Text(
         'Nothing scanned yet. Tap Scan Document to capture your first page.',
-        style: TextStyle(color: Brand.grey, fontSize: 15, height: 1.4),
+        style: BrandType.subtitle,
       ),
     );
   }
@@ -482,16 +435,12 @@ class _RecentRow extends StatelessWidget {
                       document.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Brand.ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: BrandType.title,
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '$date  |  $size',
-                      style: const TextStyle(color: Brand.grey, fontSize: 13),
+                      style: BrandType.caption,
                     ),
                   ],
                 ),

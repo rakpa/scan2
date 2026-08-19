@@ -124,13 +124,13 @@ class _AppDrawer extends StatelessWidget {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: ScanellaWordmark(fontSize: 32),
+              child: ScanellaWordmark(fontSize: BrandType.wordmarkCompact),
             ),
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
               child: Text(
                 'Scan. Save. Simplify.',
-                style: TextStyle(color: Brand.grey, fontSize: 14),
+                style: BrandType.subtitle,
               ),
             ),
             _DrawerItem(
@@ -183,7 +183,7 @@ class _DrawerItem extends StatelessWidget {
       leading: Icon(icon, color: selected ? Brand.blue : Brand.ink),
       title: Text(
         label,
-        style: TextStyle(
+        style: BrandType.title.copyWith(
           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           color: selected ? Brand.blue : Brand.ink,
         ),
@@ -268,7 +268,7 @@ class _NavItem extends StatelessWidget {
           const SizedBox(height: 3),
           Text(
             label,
-            style: TextStyle(
+            style: BrandType.caption.copyWith(
               fontSize: 11,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               color: color,

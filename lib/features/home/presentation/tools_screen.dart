@@ -17,19 +17,11 @@ class ToolsScreen extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 140),
           children: [
-            const Text(
-              'Tools',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-                letterSpacing: -0.5,
-              ),
-            ),
+            const Text('Tools', style: BrandType.headline),
             const SizedBox(height: 6),
             const Text(
               'Extra ways to capture and bring files in.',
-              style: TextStyle(color: Brand.grey, fontSize: 15),
+              style: BrandType.subtitle,
             ),
             const SizedBox(height: 22),
             _ToolTile(
@@ -100,22 +92,9 @@ class _ToolTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Brand.ink,
-                        ),
-                      ),
+                      Text(title, style: BrandType.title),
                       const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          color: Brand.grey,
-                        ),
-                      ),
+                      Text(subtitle, style: BrandType.caption),
                     ],
                   ),
                 ),

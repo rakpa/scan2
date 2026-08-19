@@ -74,33 +74,22 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
                   key: _formKey,
                   child: Column(
                     children: [
-                      const ScanellaAppMark(size: 84),
-                      const SizedBox(height: 14),
-                      const ScanellaWordmark(fontSize: 38),
+                      const ScanellaAppMark(size: 76),
+                      const SizedBox(height: 12),
+                      const ScanellaWordmark(),
                       const SizedBox(height: 4),
                       const Text(
                         'Scan. Save. Simplify.',
-                        style: TextStyle(fontSize: 16, color: Brand.grey),
+                        style: BrandType.subtitle,
                       ),
-                      const SizedBox(height: 26),
-                      const Text(
-                        'Create Account',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          color: Brand.ink,
-                        ),
-                      ),
+                      const SizedBox(height: 22),
+                      const Text('Create Account', style: BrandType.display),
                       const SizedBox(height: 8),
                       const Text(
                         'Join Scanella to scan, save and access\n'
                         'your documents anywhere.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: Brand.grey,
-                          height: 1.4,
-                        ),
+                        style: BrandType.subtitle,
                       ),
                       const SizedBox(height: 24),
                       BrandField(
@@ -176,11 +165,9 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
                               .continueWithoutAccount();
                           if (context.mounted) context.go('/library');
                         },
-                        child: const Text(
+                        child: Text(
                           'Continue without an account',
-                          style: TextStyle(
-                            color: Brand.grey,
-                            fontSize: 15,
+                          style: BrandType.caption.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -248,7 +235,7 @@ class _TermsRow extends StatelessWidget {
         Expanded(
           child: RichText(
             text: const TextSpan(
-              style: TextStyle(fontSize: 14.5, color: Brand.grey),
+              style: BrandType.caption,
               children: [
                 TextSpan(text: 'I agree to the '),
                 TextSpan(

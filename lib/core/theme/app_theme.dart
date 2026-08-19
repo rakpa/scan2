@@ -1,23 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:scan2/core/theme/brand.dart';
 
-/// Visual system for Scan2.
+/// Visual system for Scanella — splash, home and post-scan share it.
 ///
-/// Typography stays on the platform default face — the intent is a more
-/// confident surface, not a different voice. What changes is everything
-/// around it: a deeper brand colour, flatter cards that rely on a hairline
-/// border instead of drop shadow, generous corner radii, and consistent
-/// control heights, so the app reads as considered rather than default.
+/// The type scale is [BrandType]. The face comes from the platform
+/// (San Francisco on iOS, Roboto on Android) so welcome screens and the
+/// crop/library screens no longer mix two fonts.
 class AppTheme {
   const AppTheme._();
-
-  /// Deep, slightly violet blue. Reads as "document tooling" rather than
-  /// stock Material blue.
-  static const seed = Color(0xFF2B4ACB);
-
-  /// Material 3 tones a seed down considerably; the brand colour is pinned
-  /// back so buttons and the scan target keep their intended saturation.
-  static const _brand = Color(0xFF3355E8);
 
   static ThemeData get light => _build(Brightness.light);
   static ThemeData get dark => _build(Brightness.dark);
@@ -25,44 +17,64 @@ class AppTheme {
   static ThemeData _build(Brightness brightness) {
     final isLight = brightness == Brightness.light;
     final generated = ColorScheme.fromSeed(
-      seedColor: seed,
+      seedColor: Brand.blue,
       brightness: brightness,
     );
-    final scheme = isLight
-        ? generated.copyWith(primary: _brand, onPrimary: Colors.white)
-        : generated;
+    final scheme = generated.copyWith(
+      primary: Brand.blue,
+      onPrimary: Colors.white,
+      surface: isLight ? Brand.canvas : generated.surface,
+    );
 
-    final base = ThemeData(useMaterial3: true, colorScheme: scheme);
-    final text = base.textTheme;
+    final platform = Typography.material2021(platform: defaultTargetPlatform);
+    final baseFace = isLight ? platform.black : platform.white;
 
-    return base.copyWith(
-      scaffoldBackgroundColor: isLight
-          ? const Color(0xFFF7F8FC)
-          : scheme.surface,
-      textTheme: text.copyWith(
-        // Slightly tightened headings; the default tracking looks loose at
-        // display sizes on a small screen.
-        displaySmall: text.displaySmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.8,
-        ),
-        headlineMedium: text.headlineMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.5,
-        ),
-        titleLarge: text.titleLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.3,
-        ),
-        titleMedium: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        titleSmall: text.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-        labelLarge: text.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+    TextStyle face(TextStyle brand, {Color? color}) {
+      return baseFace.bodyMedium!
+          .copyWith(
+            fontSize: brand.fontSize,
+            fontWeight: brand.fontWeight,
+            letterSpacing: brand.letterSpacing,
+            height: brand.height,
+            color: color ?? (isLight ? brand.color : scheme.onSurface),
+          );
+    }
+
+    final text = TextTheme(
+      displaySmall: face(BrandType.display),
+      headlineMedium: face(BrandType.headline),
+      headlineSmall: face(BrandType.headline),
+      titleLarge: face(BrandType.title),
+      titleMedium: face(
+        BrandType.title.copyWith(fontSize: 16, fontWeight: FontWeight.w700),
       ),
+      titleSmall: face(
+        BrandType.title.copyWith(fontSize: 15, fontWeight: FontWeight.w600),
+      ),
+      bodyLarge: face(BrandType.body),
+      bodyMedium: face(BrandType.body),
+      bodySmall: face(BrandType.caption),
+      labelLarge: face(BrandType.button, color: Brand.ink),
+      labelMedium: face(BrandType.caption.copyWith(fontWeight: FontWeight.w600)),
+      labelSmall: face(BrandType.caption.copyWith(fontSize: 11)),
+    );
+
+    final platformFace = baseFace.bodyMedium!;
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      typography: platform,
+      fontFamily: platformFace.fontFamily,
+      textTheme: text,
+      scaffoldBackgroundColor: isLight ? Brand.canvas : scheme.surface,
       appBarTheme: AppBarTheme(
         centerTitle: false,
-        scrolledUnderElevation: 0.5,
-        backgroundColor: isLight ? const Color(0xFFF7F8FC) : scheme.surface,
+        scrolledUnderElevation: 0,
+        backgroundColor: isLight ? Brand.canvas : scheme.surface,
+        foregroundColor: isLight ? Brand.ink : scheme.onSurface,
         surfaceTintColor: Colors.transparent,
+        titleTextStyle: text.titleLarge,
         systemOverlayStyle: isLight
             ? SystemUiOverlayStyle.dark
             : SystemUiOverlayStyle.light,
@@ -71,80 +83,92 @@ class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
-        color: isLight ? Colors.white : scheme.surfaceContainerLow,
+        color: isLight ? Brand.surface : scheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: isLight ? 0.6 : 0.4),
-          ),
+          side: const BorderSide(color: Brand.outline),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          backgroundColor: Brand.blue,
+          foregroundColor: Colors.white,
+          textStyle: face(BrandType.button, color: Colors.white),
           minimumSize: const Size(0, 50),
           padding: const EdgeInsets.symmetric(horizontal: 22),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(Brand.radiusButton),
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          foregroundColor: Brand.blue,
+          textStyle: face(BrandType.button, color: Brand.blue),
           minimumSize: const Size(0, 50),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(Brand.radiusButton),
           ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: Brand.blue,
+          textStyle: face(BrandType.link),
         ),
       ),
       chipTheme: ChipThemeData(
         side: BorderSide.none,
         showCheckmark: false,
+        labelStyle: text.labelMedium,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         elevation: 3,
-        extendedPadding: const EdgeInsets.symmetric(horizontal: 24),
-        extendedTextStyle: text.labelLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.1,
-        ),
+        backgroundColor: Brand.blue,
+        foregroundColor: Colors.white,
+        extendedTextStyle: face(BrandType.button, color: Colors.white),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
-      listTileTheme: const ListTileThemeData(
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      listTileTheme: ListTileThemeData(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        titleTextStyle: text.titleSmall,
+        subtitleTextStyle: text.bodySmall,
+        iconColor: Brand.ink,
       ),
       bottomAppBarTheme: BottomAppBarThemeData(
-        // The scaffold sits on a tinted off-white, so the bar needs its own
-        // lighter surface or it disappears and content appears to float over
-        // the navigation.
-        color: isLight ? Colors.white : scheme.surfaceContainerHigh,
+        color: isLight ? Brand.surface : scheme.surfaceContainerHigh,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         height: 68,
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: isLight ? Colors.white : scheme.surfaceContainerLow,
+        backgroundColor: isLight ? Brand.surface : scheme.surfaceContainerLow,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
         ),
       ),
       dialogTheme: DialogThemeData(
+        backgroundColor: isLight ? Brand.surface : scheme.surfaceContainerLow,
+        titleTextStyle: text.titleLarge,
+        contentTextStyle: text.bodyMedium,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+        contentTextStyle: face(BrandType.body, color: Colors.white),
         insetPadding: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      dividerTheme: DividerThemeData(
+      dividerTheme: const DividerThemeData(
         space: 1,
         thickness: 1,
-        color: scheme.outlineVariant.withValues(alpha: 0.5),
+        color: Brand.outline,
       ),
       sliderTheme: SliderThemeData(
-        activeTrackColor: scheme.primary,
-        thumbColor: scheme.primary,
+        activeTrackColor: Brand.blue,
+        thumbColor: Brand.blue,
         overlayShape: SliderComponentShape.noOverlay,
       ),
     );

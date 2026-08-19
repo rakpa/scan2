@@ -32,14 +32,7 @@ class AuthNavBar extends ConsumerWidget {
           TextButton(
             key: const Key('auth-skip'),
             onPressed: () => _skip(context, ref),
-            child: const Text(
-              'Skip',
-              style: TextStyle(
-                color: Brand.blue,
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+              child: const Text('Skip', style: BrandType.link),
           ),
         ],
       ),

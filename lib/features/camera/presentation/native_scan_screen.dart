@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/camera/domain/native_document_scanner.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
@@ -112,7 +113,6 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final error = _error;
 
     return Scaffold(
@@ -128,7 +128,7 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
                     const SizedBox(height: 20),
                     Text(
                       _status,
-                      style: const TextStyle(color: Colors.white70),
+                      style: BrandType.body.copyWith(color: Colors.white70),
                     ),
                   ],
                 )
@@ -144,9 +144,7 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
                     Text(
                       error,
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white,
-                      ),
+                      style: BrandType.body.copyWith(color: Colors.white),
                     ),
                     const SizedBox(height: 24),
                     FilledButton(
@@ -162,9 +160,9 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
                     ),
                     TextButton(
                       onPressed: () => context.go('/library'),
-                      child: const Text(
+                      child: Text(
                         'Back to library',
-                        style: TextStyle(color: Colors.white70),
+                        style: BrandType.link.copyWith(color: Colors.white70),
                       ),
                     ),
                   ],

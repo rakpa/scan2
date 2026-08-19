@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/core/widgets/page_thumbnail.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/library/data/document_store.dart';
@@ -34,6 +35,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
     final pages = document?.pages ?? const <ScanPage>[];
 
     return Scaffold(
+      backgroundColor: Brand.canvas,
       appBar: AppBar(
         title: Text(document?.title ?? 'Document'),
         actions: [
@@ -85,7 +87,7 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                         const SizedBox(height: 16),
                         Text(
                           _busyLabel,
-                          style: const TextStyle(color: Colors.white),
+                          style: BrandType.body.copyWith(color: Colors.white),
                         ),
                       ],
                     ],
@@ -259,30 +261,21 @@ class _DocumentSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: Row(
         children: [
-          Icon(
-            Icons.layers_outlined,
-            size: 16,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          const Icon(Icons.layers_outlined, size: 16, color: Brand.grey),
           const SizedBox(width: 6),
           Text(
             '${document.pageCount} page'
             '${document.pageCount == 1 ? '' : 's'}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: BrandType.caption,
           ),
           const SizedBox(width: 12),
           Text(
             '·  ${DateFormat.yMMMd().add_jm().format(document.createdAt)}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: BrandType.caption,
           ),
         ],
       ),
@@ -306,8 +299,6 @@ class _PageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
@@ -334,24 +325,15 @@ class _PageCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Page ${index + 1}',
-                        style: theme.textTheme.titleMedium,
-                      ),
+                      Text('Page ${index + 1}', style: BrandType.title),
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(
-                            Icons.tune,
-                            size: 14,
-                            color: theme.colorScheme.primary,
-                          ),
+                          const Icon(Icons.tune, size: 14, color: Brand.blue),
                           const SizedBox(width: 5),
-                          Text(
+                          const Text(
                             'Tap to crop and enhance',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                            style: BrandType.caption,
                           ),
                         ],
                       ),
@@ -367,9 +349,9 @@ class _PageCard extends StatelessWidget {
                   index: index,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Icon(
+                    child: const Icon(
                       Icons.drag_handle,
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: Brand.greyLight,
                     ),
                   ),
                 ),

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/imaging/raster_image.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
@@ -320,6 +321,8 @@ class _CropScreenState extends ConsumerState<CropScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        titleTextStyle: BrandType.title.copyWith(color: Colors.white),
+        iconTheme: const IconThemeData(color: Colors.white),
         title: Text(_stage == _Stage.crop ? 'Adjust edges' : 'Enhance'),
         leading: IconButton(
           icon: Icon(_stage == _Stage.crop ? Icons.close : Icons.arrow_back),
@@ -364,19 +367,19 @@ class _CropScreenState extends ConsumerState<CropScreen> {
           child: Text(
             error,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70),
+            style: BrandType.body.copyWith(color: Colors.white70),
           ),
         ),
       );
     }
 
     if (_source == null) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
           child: Text(
             'Editing is available on device.',
-            style: TextStyle(color: Colors.white70),
+            style: BrandType.body.copyWith(color: Colors.white70),
           ),
         ),
       );
@@ -478,10 +481,10 @@ class _CropScreenState extends ConsumerState<CropScreen> {
   Widget _buildCropControls() {
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Text(
             'Drag the corners or edges to match the page',
-            style: TextStyle(color: Colors.white60, fontSize: 13),
+            style: BrandType.caption.copyWith(color: Colors.white70),
           ),
         ),
         const SizedBox(width: 12),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/core/widgets/page_thumbnail.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
@@ -35,7 +36,6 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final async = ref.watch(documentsProvider);
     final all = async.valueOrNull;
     final documents = _sorted(_filtered(all ?? const []));
@@ -62,8 +62,8 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
                   : _Header(count: all?.length ?? 0),
             ),
             if ((all ?? const []).isNotEmpty) ...[
-              SliverToBoxAdapter(child: _searchField(theme)),
-              SliverToBoxAdapter(child: _toolBar(theme, documents.length)),
+              SliverToBoxAdapter(child: _searchField()),
+              SliverToBoxAdapter(child: _toolBar(documents.length)),
             ],
             if (loading)
               const SliverFillRemaining(
@@ -115,41 +115,50 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
     return list;
   }
 
-  Widget _searchField(ThemeData theme) {
+  Widget _searchField() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
       child: TextField(
         onChanged: (value) => setState(() => _query = value),
         textInputAction: TextInputAction.search,
-        style: theme.textTheme.bodyMedium,
+        style: BrandType.body,
         decoration: InputDecoration(
           hintText: 'Search documents',
-          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+          hintStyle: BrandType.body.copyWith(color: Brand.greyLight),
+          prefixIcon: const Icon(
+            Icons.search_rounded,
+            size: 20,
+            color: Brand.greyLight,
+          ),
           isDense: true,
           filled: true,
-          fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
-            alpha: 0.55,
-          ),
+          fillColor: Brand.surface,
           contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Brand.outline),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Brand.blue, width: 1.6),
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
+            borderSide: const BorderSide(color: Brand.outline),
           ),
         ),
       ),
     );
   }
 
-  Widget _toolBar(ThemeData theme, int shown) {
+  Widget _toolBar(int shown) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 12, 10),
       child: Row(
         children: [
           Text(
             '$shown document${shown == 1 ? '' : 's'}',
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: BrandType.caption,
           ),
           const Spacer(),
           PopupMenuButton<DocumentSort>(
@@ -164,13 +173,13 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               child: Row(
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.swap_vert_rounded,
                     size: 19,
-                    color: theme.colorScheme.onSurfaceVariant,
+                    color: Brand.grey,
                   ),
                   const SizedBox(width: 4),
-                  Text(_sort.label, style: theme.textTheme.labelMedium),
+                  Text(_sort.label, style: BrandType.caption),
                 ],
               ),
             ),
@@ -284,7 +293,6 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 12, 14),
       child: Row(
@@ -293,15 +301,13 @@ class _Header extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Documents', style: theme.textTheme.headlineMedium),
+                const Text('Documents', style: BrandType.headline),
                 const SizedBox(height: 3),
                 Text(
                   count == 0
                       ? 'Everything you scan lives here'
                       : '$count saved on this device',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: BrandType.caption,
                 ),
               ],
             ),
@@ -349,9 +355,7 @@ class _SelectionBar extends StatelessWidget {
           ),
           Text(
             '$count selected',
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: theme.colorScheme.onPrimaryContainer,
-            ),
+            style: BrandType.title,
           ),
           const Spacer(),
           TextButton(onPressed: onSelectAll, child: const Text('All')),
@@ -386,8 +390,6 @@ class _DocumentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return GestureDetector(
       onTap: onTap,
       onLongPress: onToggle,
@@ -400,9 +402,7 @@ class _DocumentTile extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: selected
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+                  color: selected ? Brand.blue : Brand.outline,
                   width: selected ? 2.5 : 1,
                 ),
                 boxShadow: [
@@ -445,16 +445,14 @@ class _DocumentTile extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             document.title,
-            style: theme.textTheme.titleSmall,
+            style: BrandType.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(
             DateFormat.MMMd().format(document.createdAt),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: BrandType.caption,
           ),
         ],
       ),
@@ -481,15 +479,11 @@ class _DocumentRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
         side: BorderSide(
-          color: selected
-              ? theme.colorScheme.primary
-              : theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+          color: selected ? Brand.blue : Brand.outline,
           width: selected ? 2 : 1,
         ),
       ),
@@ -521,7 +515,7 @@ class _DocumentRow extends StatelessWidget {
                   children: [
                     Text(
                       document.title,
-                      style: theme.textTheme.titleSmall,
+                      style: BrandType.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -530,9 +524,7 @@ class _DocumentRow extends StatelessWidget {
                       '${document.pageCount} page'
                       '${document.pageCount == 1 ? '' : 's'} · '
                       '${DateFormat.yMMMd().format(document.createdAt)}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: BrandType.caption,
                     ),
                   ],
                 ),
@@ -540,9 +532,9 @@ class _DocumentRow extends StatelessWidget {
               if (selecting)
                 _SelectionDot(selected: selected)
               else
-                Icon(
+                const Icon(
                   Icons.chevron_right_rounded,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: Brand.greyLight,
                 ),
             ],
           ),
@@ -572,7 +564,7 @@ class _PageBadge extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             '$count',
-            style: const TextStyle(
+            style: BrandType.caption.copyWith(
               color: Colors.white,
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -660,16 +652,13 @@ class _EmptyLibrary extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 30),
-            Text('Nothing scanned yet', style: theme.textTheme.titleLarge),
+            const Text('Nothing scanned yet', style: BrandType.title),
             const SizedBox(height: 10),
-            Text(
+            const Text(
               'Tap the scan button below. Your device finds the page edges '
               'and Scan2 straightens and cleans it up.',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.45,
-              ),
+              style: BrandType.subtitle,
             ),
           ],
         ),
@@ -703,24 +692,21 @@ class _NoResults extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 120),
+        padding: EdgeInsets.only(bottom: 120),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.search_off_rounded,
               size: 42,
-              color: theme.colorScheme.onSurfaceVariant,
+              color: Brand.greyLight,
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Text(
               'No documents match that search',
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: BrandType.subtitle,
             ),
           ],
         ),

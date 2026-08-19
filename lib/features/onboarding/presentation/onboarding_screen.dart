@@ -52,14 +52,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 padding: const EdgeInsets.fromLTRB(0, 4, 20, 0),
                 child: TextButton(
                   onPressed: _finish,
-                  child: const Text(
-                    'Skip',
-                    style: TextStyle(
-                      color: Brand.blue,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: const Text('Skip', style: BrandType.link),
                 ),
               ),
             ),
@@ -135,11 +128,7 @@ class _OnboardingPage extends StatelessWidget {
           Text(
             page.body,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 16,
-              color: Brand.grey,
-              height: 1.45,
-            ),
+            style: BrandType.subtitle,
           ),
           const SizedBox(height: 10),
           if (page.features.isEmpty)
@@ -205,12 +194,7 @@ class _SplitHeadline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const style = TextStyle(
-      fontSize: 33,
-      fontWeight: FontWeight.w800,
-      height: 1.22,
-      letterSpacing: -0.6,
-    );
+    final style = BrandType.display;
     return RichText(
       textAlign: TextAlign.center,
       text: TextSpan(
@@ -259,11 +243,9 @@ class _FeatureLabel extends StatelessWidget {
           Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.25,
-              color: Brand.ink,
+            style: BrandType.caption.copyWith(
               fontWeight: FontWeight.w600,
+              color: Brand.ink,
             ),
           ),
         ],
