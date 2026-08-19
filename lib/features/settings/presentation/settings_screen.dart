@@ -19,20 +19,33 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           _SectionHeader('Scanning'),
           SwitchListTile(
+            secondary: const Icon(Icons.document_scanner_outlined),
+            title: const Text('Use the in-app camera'),
+            subtitle: const Text(
+              'Off: capture with the system document scanner, which detects '
+              'edges best. On: use Scan2\'s camera with its live overlay and '
+              'batch strip.',
+            ),
+            value: settings.useInAppCamera,
+            onChanged: notifier.setUseInAppCamera,
+          ),
+          SwitchListTile(
             secondary: const Icon(Icons.motion_photos_auto_outlined),
             title: const Text('Auto-capture'),
             subtitle: const Text(
-              'Take the shot automatically once the page is in frame '
+              'In-app camera only. Takes the shot once the page is in frame '
               'and the phone is steady.',
             ),
             value: settings.autoCapture,
-            onChanged: notifier.setAutoCapture,
+            onChanged: settings.useInAppCamera ? notifier.setAutoCapture : null,
           ),
           SwitchListTile(
             secondary: const Icon(Icons.volume_up_outlined),
             title: const Text('Shutter sound'),
             value: settings.shutterSound,
-            onChanged: notifier.setShutterSound,
+            onChanged: settings.useInAppCamera
+                ? notifier.setShutterSound
+                : null,
           ),
           const Divider(height: 32),
 

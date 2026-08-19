@@ -117,6 +117,31 @@ void main() {
       },
     );
 
+    test('a pre-cropped page is enhanced but not cropped again', () async {
+      // What the platform scanner hands back: already perspective-corrected.
+      // Detecting edges on it again would crop into the content.
+      final result = await const PageProcessor().process(
+        imagePath: capturePath,
+        detectEdges: false,
+        adjustments: const ScanAdjustments(filter: ScanFilter.magic),
+      );
+
+      expect(result.quad, isNull, reason: 'no crop should be applied');
+      final decoded = img.decodeImage(result.bytes)!;
+      expect(decoded.width, 900, reason: 'dimensions must be unchanged');
+      expect(decoded.height, 1200);
+
+      // Enhancement still ran.
+      final original = img.decodeImage(File(capturePath).readAsBytesSync())!;
+      final before = original.getPixel(450, 600);
+      final after = decoded.getPixel(450, 600);
+      expect(
+        (after.r - before.r).abs() + (after.g - before.g).abs(),
+        greaterThan(0),
+        reason: 'the Auto filter should still have been applied',
+      );
+    });
+
     test('render re-derives from source bytes', () async {
       final source = File(capturePath).readAsBytesSync();
       final rendered = await const PageProcessor().render(

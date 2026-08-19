@@ -7,6 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 /// This is the production-quality edge detection path (platform CV), not the
 /// live preview heuristic. Returns cropped page image paths, or null if cancelled.
 class NativeDocumentScanner {
+  const NativeDocumentScanner();
+
   Future<List<String>?> scan({int maxPages = 24}) async {
     if (kIsWeb) return null;
 

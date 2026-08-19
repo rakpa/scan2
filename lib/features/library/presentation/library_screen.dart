@@ -284,8 +284,8 @@ class _EmptyLibrary extends StatelessWidget {
             Text('No scans yet', style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
-              'Point the camera at a document and Scan2 finds the edges, '
-              'straightens the page and cleans it up automatically.',
+              'Tap Scan. Your device finds the page edges, and Scan2 '
+              'straightens and cleans it up automatically.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
