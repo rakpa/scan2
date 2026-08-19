@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/brand.dart';
-import 'package:scan2/features/camera/domain/scan_mode.dart';
 import 'package:scan2/features/library/domain/gallery_import.dart';
 
 /// Shortcuts that do not live on the home grid.
@@ -37,15 +36,8 @@ class ToolsScreen extends ConsumerWidget {
               icon: Icons.document_scanner_outlined,
               color: Brand.blue,
               title: 'Scan Document',
-              subtitle: 'Live edges and auto-capture.',
-              onTap: () => context.push('/camera', extra: ScanMode.document),
-            ),
-            _ToolTile(
-              icon: Icons.badge_outlined,
-              color: const Color(0xFF2C7BE5),
-              title: 'Scan ID Card',
-              subtitle: 'A tighter frame for cards and licences.',
-              onTap: () => context.push('/camera', extra: ScanMode.idCard),
+              subtitle: 'System auto-edge scan — the default capture path.',
+              onTap: () => context.push('/camera'),
             ),
             _ToolTile(
               icon: Icons.photo_library_outlined,
@@ -57,13 +49,6 @@ class ToolsScreen extends ConsumerWidget {
                 ref,
                 title: 'Imported files',
               ),
-            ),
-            _ToolTile(
-              icon: Icons.center_focus_strong_outlined,
-              color: Brand.ink,
-              title: 'System scanner',
-              subtitle: 'VisionKit / ML Kit — often better on small pages.',
-              onTap: () => context.push('/scan-native'),
             ),
           ],
         ),

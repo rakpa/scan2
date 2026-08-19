@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/brand.dart';
-import 'package:scan2/features/camera/domain/scan_mode.dart';
 import 'package:scan2/features/home/presentation/home_screen.dart';
 import 'package:scan2/features/home/presentation/tools_screen.dart';
 import 'package:scan2/features/library/presentation/documents_view.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
-import 'package:scan2/features/shared/providers/settings_provider.dart';
 
 /// The app shell: Home, Documents, a raised Scan button, Tools, Settings.
 class HomeShell extends ConsumerStatefulWidget {
@@ -48,14 +46,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: _ScanButton(
-        onPressed: () {
-          final inApp = ref.read(settingsProvider).useInAppCamera;
-          if (inApp) {
-            context.push('/camera', extra: ScanMode.document);
-          } else {
-            context.push('/scan-native');
-          }
-        },
+        onPressed: () => context.push('/camera'),
       ),
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(

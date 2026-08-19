@@ -37,8 +37,8 @@ class SettingsScreen extends ConsumerWidget {
                   icon: Icons.document_scanner_outlined,
                   title: 'Use the in-app camera',
                   subtitle:
-                      'On is the Scanella camera with live edges and auto-capture. '
-                      'Off uses the system scanner from the centre Scan button.',
+                      'Off uses the system scanner, which finds edges '
+                      'best. On adds a live overlay and batch strip.',
                   value: settings.useInAppCamera,
                   onChanged: notifier.setUseInAppCamera,
                 ),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:scan2/features/camera/domain/scan_mode.dart';
 import 'package:scan2/features/camera/presentation/camera_screen.dart';
 import 'package:scan2/features/camera/presentation/native_scan_screen.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
@@ -15,6 +14,7 @@ import 'package:scan2/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:scan2/features/onboarding/presentation/welcome_screen.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
 import 'package:scan2/features/shared/providers/onboarding_provider.dart';
+import 'package:scan2/features/shared/providers/settings_provider.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
@@ -75,14 +75,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/camera',
         builder: (context, state) {
-          final extra = state.extra;
-          final mode = extra is ScanMode ? extra : ScanMode.document;
-          return CameraScreen(initialMode: mode);
+          // The platform scanner is the default capture path; the in-app
+          // camera is opt-in from Settings.
+          final inApp = ref.read(settingsProvider).useInAppCamera;
+          return inApp ? const CameraScreen() : const NativeScanScreen();
         },
-      ),
-      GoRoute(
-        path: '/scan-native',
-        builder: (context, state) => const NativeScanScreen(),
       ),
       GoRoute(
         path: '/crop',

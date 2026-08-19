@@ -100,13 +100,6 @@ class _QuadPainter extends CustomPainter {
       _drawBracketArm(canvas, corner, previous, bracket);
     }
 
-    if (locked) {
-      for (final corner in points) {
-        canvas.drawCircle(corner, 11, Paint()..color = Colors.white);
-        canvas.drawCircle(corner, 8, Paint()..color = color);
-      }
-    }
-
     if (progress > 0.01) {
       _drawProgressRing(canvas, points, size);
     }

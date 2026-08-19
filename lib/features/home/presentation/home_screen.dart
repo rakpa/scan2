@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/core/widgets/illustrations.dart';
 import 'package:scan2/core/widgets/page_thumbnail.dart';
-import 'package:scan2/features/camera/domain/scan_mode.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/gallery_import.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
@@ -36,8 +35,7 @@ class HomeScreen extends ConsumerWidget {
             const SliverToBoxAdapter(child: _WelcomeBanner()),
             SliverToBoxAdapter(
               child: _ActionGrid(
-                onScanDocument: () =>
-                    context.push('/camera', extra: ScanMode.document),
+                onScanDocument: () => context.push('/camera'),
                 onScanPhotos: () => importGalleryAsDocument(
                   context,
                   ref,
@@ -92,7 +90,7 @@ class HomeScreen extends ConsumerWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
-              context.push('/camera', extra: ScanMode.document);
+              context.push('/camera');
             },
             child: const Text('Scan anyway'),
           ),
