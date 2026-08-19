@@ -53,6 +53,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ..showSnackBar(SnackBar(content: Text(text)));
   }
 
+  /// Straight into the app without an account. Everything works offline, so
+  /// this is a real route rather than a dismissal.
+  Future<void> _skip() async {
+    await ref.read(authProvider.notifier).continueWithoutAccount();
+    if (mounted) context.go('/library');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -60,16 +67,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                icon: const Icon(
-                  Icons.chevron_left_rounded,
-                  size: 32,
-                  color: Brand.blue,
-                ),
-                onPressed: () =>
-                    context.canPop() ? context.pop() : context.go('/welcome'),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chevron_left_rounded,
+                      size: 32,
+                      color: Brand.blue,
+                    ),
+                    onPressed: () => context.canPop()
+                        ? context.pop()
+                        : context.go('/welcome'),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _skip,
+                    child: const Text(
+                      'Skip',
+                      style: TextStyle(
+                        color: Brand.blue,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(
@@ -179,24 +203,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         onUnavailable: (provider) =>
                             _message('$provider sign-in is not connected yet.'),
                       ),
-                      const SizedBox(height: 20),
-                      TextButton(
-                        onPressed: () async {
-                          await ref
-                              .read(authProvider.notifier)
-                              .continueWithoutAccount();
-                          if (context.mounted) context.go('/library');
-                        },
-                        child: const Text(
-                          'Continue without an account',
-                          style: TextStyle(
-                            color: Brand.grey,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 24),
                       AuthFooterPrompt(
                         prompt: "Don't have an account?",
                         action: 'Sign Up',
