@@ -10,7 +10,7 @@ class AppSettings {
     this.autoCapture = true,
     this.defaultFilter = ScanFilter.magic,
     this.shutterSound = true,
-    this.useInAppCamera = false,
+    this.useInAppCamera = true,
   });
 
   final ThemeMode themeMode;
@@ -84,7 +84,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
             ? ScanFilter.values[filterIndex]
             : ScanFilter.magic,
         shutterSound: prefs.getBool(_shutterKey) ?? true,
-        useInAppCamera: prefs.getBool(_inAppCameraKey) ?? false,
+        useInAppCamera: prefs.getBool(_inAppCameraKey) ?? true,
       );
     } catch (e) {
       debugPrint('Settings unavailable, using defaults: $e');

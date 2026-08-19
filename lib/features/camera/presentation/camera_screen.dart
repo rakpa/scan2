@@ -9,10 +9,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/camera/domain/camera_frame_analyzer.dart';
 import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
-import 'package:scan2/features/camera/domain/native_document_scanner.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
+import 'package:scan2/features/camera/domain/scan_mode.dart';
 import 'package:scan2/features/camera/presentation/widgets/quad_overlay.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/crop/domain/page_processor.dart';
@@ -29,7 +30,9 @@ class _PendingPage {
 }
 
 class CameraScreen extends ConsumerStatefulWidget {
-  const CameraScreen({super.key});
+  const CameraScreen({super.key, this.initialMode = ScanMode.document});
+
+  final ScanMode initialMode;
 
   @override
   ConsumerState<CameraScreen> createState() => _CameraScreenState();
@@ -42,7 +45,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   DocumentEdgeTracker? _tracker;
   final _analyzer = CameraFrameAnalyzer();
   final _picker = ImagePicker();
-  final _nativeScanner = NativeDocumentScanner();
   final _processor = const PageProcessor();
 
   final List<_PendingPage> _batch = [];
@@ -50,10 +52,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   bool _isFlashOn = false;
   bool _streaming = false;
   bool _capturing = false;
-  bool _openingNative = false;
   bool _analyzing = false;
   bool _initializing = false;
   int _processingCount = 0;
+  late ScanMode _mode = widget.initialMode;
 
   /// Drives the white flash played over the preview on capture.
   final ValueNotifier<double> _shutterFlash = ValueNotifier(0);
@@ -438,40 +440,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     }
   }
 
-  Future<void> _openNativeScanner() async {
-    if (kIsWeb || _openingNative) return;
-    setState(() => _openingNative = true);
-    await _stopStream();
-
-    try {
-      final pages = await _nativeScanner.scan();
-      if (!mounted) return;
-
-      if (pages == null || pages.isEmpty) {
-        await _startStream();
-        return;
-      }
-
-      final repository = ref.read(documentRepositoryProvider);
-      final doc = await repository.createDocumentFromScans(
-        pages,
-        edgesAlreadyApplied: true,
-      );
-      bumpLibrary(ref);
-      HapticFeedback.mediumImpact();
-      if (!mounted) return;
-      context.go('/library/document/${doc.id}');
-    } catch (e) {
-      debugPrint('Native scanner failed: $e');
-      if (mounted) {
-        _showMessage('$e');
-        await _startStream();
-      }
-    } finally {
-      if (mounted) setState(() => _openingNative = false);
-    }
-  }
-
   /// Filter applied to freshly captured pages, from settings.
   ScanAdjustments _captureAdjustments() =>
       ScanAdjustments(filter: ref.read(settingsProvider).defaultFilter);
@@ -508,15 +476,20 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
+      body: Column(
         children: [
-          _buildPreview(controller),
-          _buildShutterFlash(),
           _buildTopBar(),
-          _buildStatusPill(),
-          _buildBottomBar(),
-          if (_openingNative) const _BlockingOverlay(label: 'Opening scanner…'),
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _buildPreview(controller),
+                _buildShutterFlash(),
+                _buildInstructionPill(),
+              ],
+            ),
+          ),
+          _buildBottomChrome(),
         ],
       ),
     );
@@ -576,15 +549,10 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   Color _overlayColor(ScanState state) {
+    if (state.hasDocument) return Brand.blue;
     if (state.phase == ScanPhase.capturing ||
         state.phase == ScanPhase.captured) {
       return const Color(0xFF4CAF50);
-    }
-    if (state.confidence >= DocumentEdgeTracker.autoCaptureConfidence) {
-      return const Color(0xFF4CAF50);
-    }
-    if (state.confidence >= DocumentEdgeTracker.minTrackConfidence) {
-      return const Color(0xFFFFC107);
     }
     return Colors.white70;
   }
@@ -603,198 +571,73 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   Widget _buildTopBar() {
+    final auto = ref.watch(settingsProvider.select((s) => s.autoCapture));
     return SafeArea(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              _CircleButton(
-                icon: Icons.close,
-                tooltip: 'Close',
-                onPressed: () => context.pop(),
-              ),
-              const Spacer(),
-              _CircleButton(
-                icon: _isFlashOn ? Icons.flash_on : Icons.flash_off,
-                tooltip: _isFlashOn ? 'Torch on' : 'Torch off',
-                active: _isFlashOn,
-                onPressed: _toggleFlash,
-              ),
-              const SizedBox(width: 8),
-              _CircleButton(
-                icon: Icons.document_scanner_outlined,
-                tooltip: 'System scanner',
-                onPressed: _openingNative ? null : _openNativeScanner,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusPill() {
-    final tracker = _tracker;
-    if (tracker == null) return const SizedBox.shrink();
-
-    return SafeArea(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 64),
-          child: ValueListenableBuilder<ScanState>(
-            valueListenable: tracker.state,
-            builder: (context, state, _) {
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      switch (state.phase) {
-                        ScanPhase.searching => Icons.search,
-                        ScanPhase.positioning => Icons.crop_free,
-                        ScanPhase.tooFar => Icons.zoom_in,
-                        ScanPhase.holdSteady => Icons.center_focus_strong,
-                        ScanPhase.capturing => Icons.camera,
-                        ScanPhase.captured => Icons.check_circle,
-                      },
-                      size: 18,
-                      color: _overlayColor(state),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      state.phase.message,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomBar() {
-    final tracker = _tracker;
-
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.65)],
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+        child: Column(
+          children: [
+            Row(
               children: [
-                if (_processingCount > 0)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      'Enhancing page…',
-                      style: TextStyle(color: Colors.white70),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => context.pop(),
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                ),
+                const Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'Scan ',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        TextSpan(
+                          text: 'Document',
+                          style: TextStyle(color: Brand.blue),
+                        ),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                Row(
-                  children: [
-                    Expanded(child: _buildBatchThumbnail()),
-                    if (tracker != null)
-                      ValueListenableBuilder<ScanState>(
-                        valueListenable: tracker.state,
-                        builder: (context, state, _) => _ShutterButton(
-                          progress: state.holdProgress,
-                          onPressed: _capturing ? null : () => _capture(),
-                        ),
-                      )
-                    else
-                      _ShutterButton(
-                        progress: 0,
-                        onPressed: _capturing ? null : () => _capture(),
-                      ),
-                    Expanded(child: _buildTrailingAction()),
-                  ],
+                ),
+                IconButton(
+                  tooltip: _isFlashOn ? 'Torch on' : 'Torch off',
+                  onPressed: _toggleFlash,
+                  icon: Icon(
+                    _isFlashOn
+                        ? Icons.flash_on_rounded
+                        : Icons.flash_off_rounded,
+                    color: _isFlashOn ? Brand.blue : Colors.white,
+                  ),
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBatchThumbnail() {
-    if (_batch.isEmpty) {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: _CircleButton(
-          icon: Icons.photo_library_outlined,
-          tooltip: 'Import from photos',
-          onPressed: _importFromGallery,
-        ),
-      );
-    }
-
-    final last = _batch.last;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: GestureDetector(
-        onTap: _finishBatch,
-        onLongPress: _discardLastPage,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
             Container(
-              width: 52,
-              height: 66,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white, width: 2),
-                image: DecorationImage(
-                  image: MemoryImage(last.processed.bytes),
-                  fit: BoxFit.cover,
-                ),
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(20),
               ),
-            ),
-            Positioned(
-              right: -6,
-              top: -6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  borderRadius: BorderRadius.circular(12),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    const TextSpan(text: 'Auto capture is '),
+                    TextSpan(
+                      text: auto ? 'ON' : 'OFF',
+                      style: TextStyle(
+                        color: auto ? const Color(0xFF35C759) : Colors.white70,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  '${_batch.length}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                style: const TextStyle(color: Colors.white, fontSize: 13),
               ),
             ),
           ],
@@ -803,23 +646,179 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     );
   }
 
-  Widget _buildTrailingAction() {
+  Widget _buildInstructionPill() {
+    final tracker = _tracker;
+    if (tracker == null) {
+      return const Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: 16),
+          child: _HintPill(text: 'Align document within the frame'),
+        ),
+      );
+    }
+
     return Align(
-      alignment: Alignment.centerRight,
-      child: _batch.isEmpty
-          ? const SizedBox(width: 48, height: 48)
-          : FilledButton(
-              onPressed: _finishBatch,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
+      alignment: Alignment.bottomCenter,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: ValueListenableBuilder<ScanState>(
+          valueListenable: tracker.state,
+          builder: (context, state, _) {
+            final text = switch (state.phase) {
+              ScanPhase.holdSteady => 'Hold steady…',
+              ScanPhase.capturing || ScanPhase.captured => state.phase.message,
+              ScanPhase.tooFar => state.phase.message,
+              _ => 'Align document within the frame',
+            };
+            return _HintPill(text: text);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomChrome() {
+    final tracker = _tracker;
+    final auto = ref.watch(settingsProvider.select((s) => s.autoCapture));
+
+    return ColoredBox(
+      color: Colors.black,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_processingCount > 0)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Enhancing page…',
+                    style: TextStyle(color: Colors.white70),
+                  ),
                 ),
+              if (_batch.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: TextButton(
+                    onPressed: _finishBatch,
+                    child: Text(
+                      'Done (${_batch.length})',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              _ModeSelector(
+                mode: _mode,
+                onChanged: (mode) => setState(() => _mode = mode),
               ),
-              child: Text('Done (${_batch.length})'),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: _buildGalleryControl()),
+                  if (tracker != null)
+                    ValueListenableBuilder<ScanState>(
+                      valueListenable: tracker.state,
+                      builder: (context, state, _) => _ShutterButton(
+                        progress: state.holdProgress,
+                        onPressed: _capturing ? null : () => _capture(),
+                      ),
+                    )
+                  else
+                    _ShutterButton(
+                      progress: 0,
+                      onPressed: _capturing ? null : () => _capture(),
+                    ),
+                  Expanded(
+                    child: _LabeledControl(
+                      icon: auto
+                          ? Icons.auto_awesome_mosaic_outlined
+                          : Icons.crop_free_rounded,
+                      label: auto ? 'Auto' : 'Manual',
+                      onTap: () => ref
+                          .read(settingsProvider.notifier)
+                          .setAutoCapture(!auto),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGalleryControl() {
+    if (_batch.isEmpty) {
+      return _LabeledControl(
+        icon: Icons.photo_outlined,
+        label: 'Gallery',
+        onTap: _importFromGallery,
+      );
+    }
+
+    final last = _batch.last;
+    return Align(
+      alignment: Alignment.center,
+      child: GestureDetector(
+        onTap: _finishBatch,
+        onLongPress: _discardLastPage,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    image: DecorationImage(
+                      image: MemoryImage(last.processed.bytes),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: -6,
+                  top: -6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Brand.blue,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${_batch.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 6),
+            const Text(
+              'Gallery',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -844,28 +843,32 @@ class _ShutterButton extends StatelessWidget {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Ring fills as auto-capture approaches, so the shutter never
-            // fires as a surprise.
             SizedBox(
-              width: 78,
-              height: 78,
+              width: 80,
+              height: 80,
               child: CircularProgressIndicator(
                 value: progress <= 0.01 ? 0 : progress,
-                strokeWidth: 4,
-                backgroundColor: Colors.white24,
-                valueColor: const AlwaysStoppedAnimation(Color(0xFF4CAF50)),
+                strokeWidth: 3,
+                backgroundColor: Colors.transparent,
+                valueColor: const AlwaysStoppedAnimation(Color(0xFF35C759)),
+              ),
+            ),
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.transparent,
+                border: Border.all(color: Brand.blue, width: 4),
               ),
             ),
             AnimatedContainer(
               duration: const Duration(milliseconds: 150),
-              width: onPressed == null ? 56 : 64,
-              height: onPressed == null ? 56 : 64,
+              width: onPressed == null ? 52 : 58,
+              height: onPressed == null ? 52 : 58,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: onPressed == null ? Colors.white54 : Colors.white,
-                boxShadow: const [
-                  BoxShadow(blurRadius: 12, color: Colors.black38),
-                ],
               ),
             ),
           ],
@@ -875,62 +878,97 @@ class _ShutterButton extends StatelessWidget {
   }
 }
 
-class _CircleButton extends StatelessWidget {
-  const _CircleButton({
-    required this.icon,
-    required this.onPressed,
-    this.tooltip,
-    this.active = false,
-  });
+class _HintPill extends StatelessWidget {
+  const _HintPill({required this.text});
 
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final String? tooltip;
-  final bool active;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip ?? '',
-      child: Material(
-        color: active ? Colors.white : Colors.black.withValues(alpha: 0.4),
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(
-              icon,
-              size: 22,
-              color: active ? Colors.black : Colors.white,
-            ),
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
 }
 
-class _BlockingOverlay extends StatelessWidget {
-  const _BlockingOverlay({required this.label});
+class _ModeSelector extends StatelessWidget {
+  const _ModeSelector({required this.mode, required this.onChanged});
 
-  final String label;
+  final ScanMode mode;
+  final ValueChanged<ScanMode> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.black54,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(color: Colors.white),
-            const SizedBox(height: 14),
-            Text(label, style: const TextStyle(color: Colors.white)),
-          ],
-        ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        for (final item in ScanMode.values)
+          GestureDetector(
+            onTap: () => onChanged(item),
+            child: Column(
+              children: [
+                Text(
+                  item.label,
+                  style: TextStyle(
+                    color: item == mode ? Brand.blue : Colors.white70,
+                    fontSize: 14,
+                    fontWeight: item == mode ? FontWeight.w800 : FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: item == mode ? Brand.blue : Colors.transparent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _LabeledControl extends StatelessWidget {
+  const _LabeledControl({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 26),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ],
       ),
     );
   }

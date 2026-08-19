@@ -1,7 +1,7 @@
 name: scan2
 description: "Scan2 — an offline document scanner with live edge detection, auto-capture, perspective correction and scan filters."
 publish_to: 'none'
-version: 1.1.0+722
+version: 1.1.0+723
 
 environment:
   sdk: '^3.12.0'

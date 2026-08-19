@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/features/camera/domain/scan_mode.dart';
+import 'package:scan2/features/home/presentation/home_screen.dart';
+import 'package:scan2/features/home/presentation/tools_screen.dart';
 import 'package:scan2/features/library/presentation/documents_view.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
+import 'package:scan2/features/shared/providers/settings_provider.dart';
 
-/// The app shell: a bottom bar with a docked scan button.
-///
-/// Every established scanner app is built around this shape — a persistent bar
-/// with capture as a raised, centred target rather than a corner FAB. It puts
-/// the one action people opened the app for under the thumb, and gives the
-/// rest of the app somewhere to live.
+/// The app shell: Home, Documents, a raised Scan button, Tools, Settings.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -18,19 +18,44 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: Brand.canvas,
       extendBody: true,
+      drawer: _AppDrawer(
+        selected: _tab,
+        onSelect: (index) {
+          Navigator.pop(context);
+          setState(() => _tab = index);
+        },
+      ),
       body: IndexedStack(
         index: _tab,
-        children: const [DocumentsView(), SettingsScreen(embedded: true)],
+        children: [
+          HomeScreen(
+            onOpenMenu: () => _scaffoldKey.currentState?.openDrawer(),
+            onViewAllDocuments: () => setState(() => _tab = 1),
+          ),
+          const DocumentsView(),
+          const ToolsScreen(),
+          const SettingsScreen(embedded: true),
+        ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: _ScanButton(
-        onPressed: () => context.push('/camera'),
+        onPressed: () {
+          final inApp = ref.read(settingsProvider).useInAppCamera;
+          if (inApp) {
+            context.push('/camera', extra: ScanMode.document);
+          } else {
+            context.push('/scan-native');
+          }
+        },
       ),
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(
@@ -50,27 +75,130 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             children: [
               Expanded(
                 child: _NavItem(
+                  icon: Icons.home_outlined,
+                  activeIcon: Icons.home_rounded,
+                  label: 'Home',
+                  selected: _tab == 0,
+                  onTap: () => setState(() => _tab = 0),
+                ),
+              ),
+              Expanded(
+                child: _NavItem(
                   icon: Icons.folder_outlined,
                   activeIcon: Icons.folder_rounded,
                   label: 'Documents',
-                  selected: _tab == 0,
-                  onTap: () => setState(() => _tab = 0),
+                  selected: _tab == 1,
+                  onTap: () => setState(() => _tab = 1),
                 ),
               ),
               const SizedBox(width: 78),
               Expanded(
                 child: _NavItem(
-                  icon: Icons.tune_outlined,
-                  activeIcon: Icons.tune_rounded,
+                  icon: Icons.apps_outlined,
+                  activeIcon: Icons.apps_rounded,
+                  label: 'Tools',
+                  selected: _tab == 2,
+                  onTap: () => setState(() => _tab = 2),
+                ),
+              ),
+              Expanded(
+                child: _NavItem(
+                  icon: Icons.settings_outlined,
+                  activeIcon: Icons.settings_rounded,
                   label: 'Settings',
-                  selected: _tab == 1,
-                  onTap: () => setState(() => _tab = 1),
+                  selected: _tab == 3,
+                  onTap: () => setState(() => _tab = 3),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AppDrawer extends StatelessWidget {
+  const _AppDrawer({required this.selected, required this.onSelect});
+
+  final int selected;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 12),
+              child: ScanellaWordmark(fontSize: 32),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Text(
+                'Scan. Save. Simplify.',
+                style: TextStyle(color: Brand.grey, fontSize: 14),
+              ),
+            ),
+            _DrawerItem(
+              icon: Icons.home_outlined,
+              label: 'Home',
+              selected: selected == 0,
+              onTap: () => onSelect(0),
+            ),
+            _DrawerItem(
+              icon: Icons.folder_outlined,
+              label: 'Documents',
+              selected: selected == 1,
+              onTap: () => onSelect(1),
+            ),
+            _DrawerItem(
+              icon: Icons.apps_outlined,
+              label: 'Tools',
+              selected: selected == 2,
+              onTap: () => onSelect(2),
+            ),
+            _DrawerItem(
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+              selected: selected == 3,
+              onTap: () => onSelect(3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerItem extends StatelessWidget {
+  const _DrawerItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: selected ? Brand.blue : Brand.ink),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: selected ? Brand.blue : Brand.ink,
+        ),
+      ),
+      selected: selected,
+      onTap: onTap,
     );
   }
 }
@@ -82,27 +210,20 @@ class _ScanButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return SizedBox(
       width: 64,
       height: 64,
       child: DecoratedBox(
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color.lerp(scheme.primary, Colors.white, 0.16) ?? scheme.primary,
-              scheme.primary,
-            ],
+            colors: [Color(0xFF4C7CFF), Brand.blue],
           ),
-          // Kept tight: a wide coloured glow smears across the white bar
-          // behind it and reads as a rendering artefact rather than depth.
           boxShadow: [
             BoxShadow(
-              color: scheme.primary.withValues(alpha: 0.30),
+              color: Brand.blue.withValues(alpha: 0.30),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -114,11 +235,11 @@ class _ScanButton extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onPressed,
-            child: Center(
+            child: const Center(
               child: Icon(
-                Icons.document_scanner_rounded,
-                size: 29,
-                color: scheme.onPrimary,
+                Icons.photo_camera_rounded,
+                size: 28,
+                color: Colors.white,
               ),
             ),
           ),
@@ -145,8 +266,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = selected ? scheme.primary : scheme.onSurfaceVariant;
+    final color = selected ? Brand.blue : Brand.grey;
 
     return InkWell(
       onTap: onTap,
@@ -158,7 +278,7 @@ class _NavItem extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 11.5,
+              fontSize: 11,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
               color: color,
             ),
