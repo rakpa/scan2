@@ -7,6 +7,8 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:gal/gal.dart';
+import 'package:scan2/core/imaging/raster.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -17,31 +19,40 @@ import 'package:share_plus/share_plus.dart';
 class ExportService {
   const ExportService();
 
-  /// Renders [document] to a PDF, one page per scan, each sized to its own
-  /// aspect ratio so nothing is letterboxed or stretched.
-  Future<File> buildPdf(Document document) async {
+  /// Renders [document] to PDF bytes, one page per scan, each sized to its
+  /// own aspect ratio so nothing is letterboxed or stretched.
+  ///
+  /// Separate from [buildPdf] so it can be exercised without a platform
+  /// temp directory.
+  Future<Uint8List> buildPdfBytes(Document document) async {
     final images = <_SizedImage>[];
     for (final page in document.pages) {
       final file = File(page.path);
       if (!await file.exists()) continue;
-      final bytes = await file.readAsBytes();
-      final size = await compute(_measure, bytes);
-      if (size == null) continue;
-      images.add(_SizedImage(bytes: bytes, width: size.$1, height: size.$2));
+      final prepared = await compute(_prepareForPdf, await file.readAsBytes());
+      if (prepared == null) continue;
+      images.add(prepared);
     }
 
     if (images.isEmpty) {
       throw StateError('This document has no pages to export.');
     }
+    return compute(_buildPdfBytes, images);
+  }
 
-    final pdf = await compute(_buildPdfBytes, images);
+  /// Renders [document] to a PDF in the temp directory.
+  Future<File> buildPdf(Document document) async {
+    final pdf = await buildPdfBytes(document);
     final directory = await getTemporaryDirectory();
     final file = File(
-      path.join(directory.path, '${_safeFileName(document.title)}.pdf'),
+      path.join(directory.path, '\${fileNameFor(document)}.pdf'),
     );
     await file.writeAsBytes(pdf, flush: true);
     return file;
   }
+
+  /// Filesystem-safe base name for [document].
+  static String fileNameFor(Document document) => _safeFileName(document.title);
 
   /// Shares [document] as a PDF.
   Future<void> sharePdf(Document document) async {
@@ -49,6 +60,31 @@ class ExportService {
     await Share.shareXFiles([
       XFile(file.path, mimeType: 'application/pdf'),
     ], subject: document.title);
+  }
+
+  /// Opens the system sheet with the PDF, where "Save to Files" writes it to
+  /// iCloud Drive or On My iPhone.
+  ///
+  /// iOS has no public API to present the document picker for saving without
+  /// going through the share sheet, so this is the supported route rather
+  /// than a shortcut.
+  Future<void> savePdfToFiles(Document document) => sharePdf(document);
+
+  /// Saves every page image into the system photo library.
+  ///
+  /// Throws [GalException] when access is refused, which the caller surfaces —
+  /// silently doing nothing is the worst possible outcome for a save action.
+  Future<int> saveToPhotos(Document document) async {
+    var saved = 0;
+    for (final page in document.pages) {
+      if (!File(page.path).existsSync()) continue;
+      await Gal.putImage(page.path, album: 'Scan2');
+      saved++;
+    }
+    if (saved == 0) {
+      throw StateError('This document has no pages to save.');
+    }
+    return saved;
   }
 
   /// Shares the page images themselves, for people who want the JPEGs.
@@ -82,10 +118,31 @@ class _SizedImage {
   final int height;
 }
 
-(int, int)? _measure(Uint8List bytes) {
+/// Longest edge of a page embedded in a PDF.
+///
+/// Well above what any screen or printer resolves for a document, and far
+/// below the ~12MP of the original: embedding those verbatim produces PDFs
+/// tens of megabytes large that are slow to open and awkward to email.
+const _pdfMaxEdge = 2400;
+
+_SizedImage? _prepareForPdf(Uint8List bytes) {
   final decoded = img.decodeImage(bytes);
   if (decoded == null) return null;
-  return (decoded.width, decoded.height);
+
+  if (math.max(decoded.width, decoded.height) <= _pdfMaxEdge) {
+    return _SizedImage(
+      bytes: bytes,
+      width: decoded.width,
+      height: decoded.height,
+    );
+  }
+
+  final scaled = Raster.fromImage(decoded).downscaledTo(_pdfMaxEdge);
+  return _SizedImage(
+    bytes: Uint8List.fromList(img.encodeJpg(scaled.toImage(), quality: 88)),
+    width: scaled.width,
+    height: scaled.height,
+  );
 }
 
 Future<Uint8List> _buildPdfBytes(List<_SizedImage> images) async {

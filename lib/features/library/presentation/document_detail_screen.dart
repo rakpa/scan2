@@ -4,10 +4,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/library/data/document_store.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/export_service.dart';
+import 'package:scan2/features/library/presentation/widgets/export_sheet.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
 
 class DocumentDetailScreen extends ConsumerStatefulWidget {
@@ -23,9 +25,11 @@ class DocumentDetailScreen extends ConsumerStatefulWidget {
 class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
   static const _exporter = ExportService();
   bool _busy = false;
+  String _busyLabel = '';
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     // Cached in a provider so an unrelated rebuild (a dialog opening, the
     // busy flag flipping) does not re-read the document and blank the list.
     final document = ref.watch(documentProvider(widget.documentId)).valueOrNull;
@@ -36,56 +40,93 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
         title: Text(document?.title ?? 'Document'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            tooltip: 'Export PDF',
-            onPressed: document == null || _busy
-                ? null
-                : () => _share(document, asPdf: true),
+            icon: const Icon(Icons.drive_file_rename_outline),
+            tooltip: 'Rename',
+            onPressed: document == null ? null : () => _rename(document),
           ),
-          IconButton(
-            icon: const Icon(Icons.ios_share),
-            tooltip: 'Share images',
-            onPressed: document == null || _busy
-                ? null
-                : () => _share(document, asPdf: false),
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Stack(
         children: [
-          if (pages.isEmpty)
+          if (document == null)
+            const Center(child: CircularProgressIndicator())
+          else if (pages.isEmpty)
             const Center(child: Text('This document has no pages.'))
           else
-            ReorderableListView.builder(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-              itemCount: pages.length,
-              onReorderItem: (oldIndex, newIndex) =>
-                  _reorder(document!, oldIndex, newIndex),
-              itemBuilder: (context, index) {
-                final page = pages[index];
-                return _PageCard(
-                  key: ValueKey(page.path),
-                  page: page,
-                  index: index,
-                  onEdit: () => _edit(document!, page),
-                  onDelete: () => _deletePage(document!, page),
-                );
-              },
+            Column(
+              children: [
+                _DocumentSummary(document: document),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                    itemCount: pages.length,
+                    onReorderItem: (oldIndex, newIndex) =>
+                        _reorder(document, oldIndex, newIndex),
+                    itemBuilder: (context, index) => _PageCard(
+                      key: ValueKey(pages[index].path),
+                      page: pages[index],
+                      index: index,
+                      onEdit: () => _edit(document, pages[index]),
+                      onDelete: () => _deletePage(document, pages[index]),
+                    ),
+                  ),
+                ),
+              ],
             ),
           if (_busy)
-            const Positioned.fill(
+            Positioned.fill(
               child: ColoredBox(
-                color: Colors.black38,
-                child: Center(child: CircularProgressIndicator()),
+                color: Colors.black.withValues(alpha: 0.45),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: Colors.white),
+                      if (_busyLabel.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          _busyLabel,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/camera'),
-        icon: const Icon(Icons.add_a_photo_outlined),
-        label: const Text('Add pages'),
-      ),
+      bottomNavigationBar: document == null || pages.isEmpty
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.push('/camera'),
+                        icon: const Icon(Icons.add, size: 20),
+                        label: const Text('Add pages'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: FilledButton.icon(
+                        onPressed: _busy ? null : () => _export(document),
+                        icon: const Icon(Icons.ios_share, size: 20),
+                        label: const Text('Export'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 
@@ -100,6 +141,76 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
         edgesAlreadyApplied: document.edgesAlreadyApplied,
       ),
     );
+  }
+
+  Future<void> _export(Document document) async {
+    if (kIsWeb) {
+      _showMessage('Export is available on device.');
+      return;
+    }
+
+    final action = await ExportSheet.show(context, document);
+    if (action == null || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _busyLabel = action == ExportAction.saveToPhotos
+          ? 'Saving to Photos…'
+          : 'Preparing PDF…';
+    });
+
+    try {
+      final message = await runExportAction(action, document, _exporter);
+      if (!mounted) return;
+      if (message.isNotEmpty) _showMessage(message);
+    } catch (e) {
+      debugPrint('Export failed: $e');
+      // Surfaced rather than swallowed: an export that silently does nothing
+      // is indistinguishable from a broken button.
+      if (mounted) _showMessage('Export failed: ${_readable(e)}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _readable(Object error) {
+    final text = error.toString();
+    return text.length > 140 ? '${text.substring(0, 140)}…' : text;
+  }
+
+  Future<void> _rename(Document document) async {
+    final controller = TextEditingController(text: document.title);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename scan'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+    await ref
+        .read(documentRepositoryProvider)
+        .renameDocument(document.id, trimmed);
+    bumpLibrary(ref);
   }
 
   Future<void> _reorder(Document document, int oldIndex, int newIndex) async {
@@ -135,34 +246,49 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
     if (mounted && document.pageCount <= 1) context.pop();
   }
 
-  Future<void> _share(Document document, {required bool asPdf}) async {
-    if (kIsWeb) {
-      _showMessage('Export is available on device.');
-      return;
-    }
-
-    setState(() => _busy = true);
-    try {
-      if (asPdf) {
-        await _exporter.sharePdf(document);
-      } else {
-        await _exporter.shareImages(document);
-      }
-    } catch (e) {
-      debugPrint('Export failed: $e');
-      if (mounted) _showMessage('Could not export this document.');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-      );
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _DocumentSummary extends StatelessWidget {
+  const _DocumentSummary({required this.document});
+
+  final Document document;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Row(
+        children: [
+          Icon(
+            Icons.layers_outlined,
+            size: 16,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '${document.pageCount} page'
+            '${document.pageCount == 1 ? '' : 's'}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '·  ${DateFormat.yMMMd().add_jm().format(document.createdAt)}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -184,65 +310,81 @@ class _PageCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onEdit,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: SizedBox(
-                  width: 64,
-                  height: 84,
-                  child: kIsWeb
-                      ? const ColoredBox(color: Colors.black12)
-                      : Image.file(
-                          File(page.path),
-                          fit: BoxFit.cover,
-                          cacheWidth: 192,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.broken_image_outlined),
-                        ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: InkWell(
+          onTap: onEdit,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: SizedBox(
+                    width: 72,
+                    height: 96,
+                    child: kIsWeb
+                        ? ColoredBox(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                          )
+                        : Image.file(
+                            File(page.path),
+                            fit: BoxFit.cover,
+                            cacheWidth: 216,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.broken_image_outlined,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Page ${index + 1}',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      page.canReedit
-                          ? 'Tap to adjust edges and enhancement'
-                          : 'Tap to enhance',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Page ${index + 1}',
+                        style: theme.textTheme.titleMedium,
                       ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.tune,
+                            size: 14,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Tap to crop and enhance',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Delete page',
+                  onPressed: onDelete,
+                ),
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(
+                      Icons.drag_handle,
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
-                  ],
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Delete page',
-                onPressed: onDelete,
-              ),
-              ReorderableDragStartListener(
-                index: index,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Icon(Icons.drag_handle),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

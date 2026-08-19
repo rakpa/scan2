@@ -20,6 +20,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final documentsAsync = ref.watch(documentsProvider);
     // valueOrNull keeps the previous list on screen while a refresh runs,
     // instead of blanking the library after every save.
@@ -30,8 +31,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          SliverAppBar.large(
-            title: const Text('Scan2'),
+          SliverAppBar(
+            pinned: true,
+            expandedHeight: 116,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              title: Text(
+                'Scan2',
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
             actions: [
               if (kIsWeb)
                 const Padding(
@@ -43,10 +54,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 tooltip: 'Settings',
                 onPressed: () => context.push('/settings'),
               ),
+              const SizedBox(width: 4),
             ],
           ),
           if ((all ?? const []).isNotEmpty)
-            SliverToBoxAdapter(child: _buildSearchField()),
+            SliverToBoxAdapter(child: _buildSearchField(theme)),
           if (loading)
             const SliverFillRemaining(
               hasScrollBody: false,
@@ -61,14 +73,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
-              sliver: SliverList.separated(
-                itemCount: documents.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) => _DocumentTile(
-                  document: documents[index],
-                  onDeleted: () => _confirmDelete(documents[index]),
-                  onRenamed: () => _promptRename(documents[index]),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  // Roughly a page shape plus room for the caption.
+                  childAspectRatio: 0.66,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  childCount: documents.length,
+                  (context, index) => _DocumentCard(
+                    document: documents[index],
+                    onDelete: () => _confirmDelete(documents[index]),
+                    onRename: () => _promptRename(documents[index]),
+                  ),
                 ),
               ),
             ),
@@ -76,7 +96,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/camera'),
-        icon: const Icon(Icons.document_scanner),
+        icon: const Icon(Icons.document_scanner_outlined),
         label: const Text('Scan'),
       ),
     );
@@ -91,15 +111,24 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     ];
   }
 
-  Widget _buildSearchField() {
+  Widget _buildSearchField(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: SearchBar(
-        hintText: 'Search scans',
-        leading: const Icon(Icons.search),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: TextField(
         onChanged: (value) => setState(() => _query = value),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 12),
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Search scans',
+          prefixIcon: const Icon(Icons.search, size: 21),
+          filled: true,
+          fillColor: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5,
+          ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
         ),
       ),
     );
@@ -168,16 +197,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 }
 
-class _DocumentTile extends StatelessWidget {
-  const _DocumentTile({
+class _DocumentCard extends StatelessWidget {
+  const _DocumentCard({
     required this.document,
-    required this.onDeleted,
-    required this.onRenamed,
+    required this.onDelete,
+    required this.onRename,
   });
 
   final Document document;
-  final VoidCallback onDeleted;
-  final VoidCallback onRenamed;
+  final VoidCallback onDelete;
+  final VoidCallback onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -187,65 +216,135 @@ class _DocumentTile extends StatelessWidget {
         : null;
 
     return Card(
-      clipBehavior: Clip.antiAlias,
-      margin: EdgeInsets.zero,
       child: InkWell(
         onTap: () => context.push('/library/document/${document.id}'),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 56,
-                  height: 72,
-                  child: thumbnail != null && !kIsWeb
-                      ? Image.file(
-                          File(thumbnail),
-                          fit: BoxFit.cover,
-                          cacheWidth: 168,
-                          errorBuilder: (_, __, ___) => const _ThumbFallback(),
-                        )
-                      : const _ThumbFallback(),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      document.title,
-                      style: theme.textTheme.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+        onLongPress: onRename,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ColoredBox(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    child: thumbnail != null && !kIsWeb
+                        ? Image.file(
+                            File(thumbnail),
+                            fit: BoxFit.cover,
+                            // Decoded at display size; full 12MP thumbnails
+                            // would blow the image cache on a long library.
+                            cacheWidth: 420,
+                            errorBuilder: (_, __, ___) =>
+                                const _ThumbFallback(),
+                          )
+                        : const _ThumbFallback(),
+                  ),
+                  if (document.pageCount > 1)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: _Badge(label: '${document.pageCount}'),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${document.pageCount} page'
-                      '${document.pageCount == 1 ? '' : 's'} · '
-                      '${DateFormat.yMMMd().add_jm().format(document.createdAt)}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 40,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.18),
+                            Colors.transparent,
+                          ],
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'rename') onRenamed();
-                  if (value == 'delete') onDeleted();
-                },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'rename', child: Text('Rename')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ),
                 ],
               ),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 4, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          document.title,
+                          style: theme.textTheme.titleSmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          DateFormat.MMMd().format(document.createdAt),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: PopupMenuButton<String>(
+                      padding: EdgeInsets.zero,
+                      iconSize: 19,
+                      tooltip: 'More',
+                      onSelected: (value) {
+                        if (value == 'rename') onRename();
+                        if (value == 'delete') onDelete();
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'rename', child: Text('Rename')),
+                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.layers_outlined, size: 13, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -258,7 +357,11 @@ class _ThumbFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: const Center(child: Icon(Icons.description_outlined)),
+      child: Icon(
+        Icons.description_outlined,
+        size: 34,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
     );
   }
 }
@@ -271,24 +374,33 @@ class _EmptyLibrary extends StatelessWidget {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.fromLTRB(36, 0, 36, 80),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.document_scanner_outlined,
-              size: 72,
-              color: theme.colorScheme.primary.withValues(alpha: 0.5),
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Icon(
+                Icons.document_scanner_outlined,
+                size: 44,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
             ),
-            const SizedBox(height: 20),
-            Text('No scans yet', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 8),
+            const SizedBox(height: 26),
+            Text('Nothing scanned yet', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 10),
             Text(
-              'Tap Scan. Your device finds the page edges, and Scan2 '
-              'straightens and cleans it up automatically.',
+              'Tap Scan and point the camera at a document. '
+              'Scan2 finds the edges, straightens the page and cleans it up.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
+                height: 1.45,
               ),
             ),
           ],
@@ -303,6 +415,28 @@ class _NoResults extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: Text('No scans match that search.'));
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 80),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.search_off,
+              size: 40,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No scans match that search',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

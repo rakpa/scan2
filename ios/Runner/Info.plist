@@ -4,6 +4,8 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan2 uses the camera to detect document edges and scan pages.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Scan2 saves your scanned pages to Photos when you choose Save to Photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Scan2 needs photo access to import documents from your library.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
