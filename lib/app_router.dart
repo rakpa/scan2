@@ -7,7 +7,11 @@ import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/crop/presentation/crop_screen.dart';
 import 'package:scan2/features/library/presentation/document_detail_screen.dart';
 import 'package:scan2/features/home/presentation/home_shell.dart';
+import 'package:scan2/features/auth/domain/auth_controller.dart';
+import 'package:scan2/features/auth/presentation/create_account_screen.dart';
+import 'package:scan2/features/auth/presentation/login_screen.dart';
 import 'package:scan2/features/onboarding/presentation/onboarding_screen.dart';
+import 'package:scan2/features/onboarding/presentation/welcome_screen.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
 import 'package:scan2/features/shared/providers/onboarding_provider.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
@@ -18,17 +22,42 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       // Read rather than watch: rebuilding the router mid-navigation would
       // drop the current route stack.
-      final completed = ref.read(onboardingCompletedProvider);
-      final onOnboarding = state.matchedLocation == '/onboarding';
-      if (!completed && !onOnboarding) return '/onboarding';
-      if (completed && onOnboarding) return '/library';
+      final seenIntro = ref.read(onboardingCompletedProvider);
+      final signedIn = ref.read(authProvider).signedIn;
+      final location = state.matchedLocation;
+
+      const intro = {'/welcome', '/onboarding'};
+      const auth = {'/signup', '/login'};
+
+      // First run: welcome, then the three intro pages.
+      if (!seenIntro) {
+        return intro.contains(location) ? null : '/welcome';
+      }
+      // Intro done but no account chosen yet: sign up or log in.
+      if (!signedIn) {
+        return auth.contains(location) ? null : '/signup';
+      }
+      // Signed in (or continuing without an account): the intro and auth
+      // screens are behind us.
+      if (intro.contains(location) || auth.contains(location)) {
+        return '/library';
+      }
       return null;
     },
     routes: [
       GoRoute(
+        path: '/welcome',
+        builder: (context, state) => const WelcomeScreen(),
+      ),
+      GoRoute(
         path: '/onboarding',
         builder: (context, state) => const OnboardingScreen(),
       ),
+      GoRoute(
+        path: '/signup',
+        builder: (context, state) => const CreateAccountScreen(),
+      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/library',
         builder: (context, state) => const HomeShell(),
@@ -70,10 +99,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         _RouteError(message: 'Page not found: ${state.uri}'),
   );
 
-  // Re-evaluate the onboarding redirect when it completes.
-  ref.listen<bool>(onboardingCompletedProvider, (_, __) {
-    router.refresh();
-  });
+  // Re-evaluate the gate whenever the intro finishes or the account changes.
+  ref.listen<bool>(onboardingCompletedProvider, (_, __) => router.refresh());
+  ref.listen<AuthState>(authProvider, (_, __) => router.refresh());
   ref.onDispose(router.dispose);
   return router;
 });
