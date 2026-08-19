@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/auth/domain/auth_controller.dart';
+import 'package:scan2/features/auth/presentation/widgets/auth_nav_bar.dart';
 import 'package:scan2/features/auth/presentation/widgets/social_row.dart';
 import 'package:scan2/features/onboarding/presentation/welcome_screen.dart';
 
@@ -65,18 +66,7 @@ class _CreateAccountScreenState extends ConsumerState<CreateAccountScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                icon: const Icon(
-                  Icons.chevron_left_rounded,
-                  size: 32,
-                  color: Brand.blue,
-                ),
-                onPressed: () =>
-                    context.canPop() ? context.pop() : context.go('/welcome'),
-              ),
-            ),
+            const AuthNavBar(),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
