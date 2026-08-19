@@ -49,6 +49,38 @@ rescue StandardError => e
   )
 end
 
+# TestFlight itself shows two first-open sheets that are not part of Scanella:
+# "What to Test" (from the build changelog) and "Share Feedback" (screenshot
+# feedback). Turn the feedback switch off on every tester group so Apple
+# skips the Share Feedback tutorial.
+def disable_testflight_screenshot_feedback!
+  app = Spaceship::ConnectAPI::App.find(APP_ID)
+  unless app
+    UI.important("App #{APP_ID} not found; cannot disable TestFlight feedback")
+    return
+  end
+
+  groups = app.get_beta_groups
+  if groups.empty?
+    UI.important("No TestFlight groups found for #{APP_ID}")
+    return
+  end
+
+  groups.each do |group|
+    UI.message("Disabling TestFlight screenshot feedback for '#{group.name}'")
+    Spaceship::ConnectAPI.patch_group(
+      group_id: group.id,
+      attributes: { feedbackEnabled: false }
+    )
+  end
+  UI.success(
+    "TestFlight screenshot feedback is off for #{groups.length} group(s). " \
+    "The Share Feedback intro should no longer appear on first open."
+  )
+rescue StandardError => e
+  UI.important("Could not disable TestFlight screenshot feedback: #{e.class}: #{e.message}")
+end
+
 def revoke_distribution_certificates_for_ci!
   return if ENV["IOS_DIST_CERT_P12_BASE64"].to_s.strip.length.positive?
   return unless ENV.fetch("IOS_AUTO_REVOKE_STALE_CERTS", "true") == "true"
@@ -274,13 +306,16 @@ platform :ios do
       begin
         # Wait for ASC processing so CI fails if Apple rejects the binary
         # (e.g. build number lower than an already-shipped TestFlight build).
+        # Do not set a changelog: TestFlight shows it as "What to Test" the
+        # first time a tester opens a new build. Screenshot feedback is the
+        # other first-open sheet — turn that off on every tester group.
+        disable_testflight_screenshot_feedback!
         upload_to_testflight(
           api_key: api_key,
           ipa: dest_ipa,
           skip_waiting_for_build_processing: false,
           distribute_external: false,
-          notify_external_testers: false,
-          changelog: "Build #{build_number} (#{build_name})"
+          notify_external_testers: false
         )
         UI.success(
           "TestFlight build #{build_name} (#{build_number}) finished processing " \

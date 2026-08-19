@@ -36,12 +36,81 @@ class Brand {
   static const radiusField = 14.0;
   static const radiusButton = 14.0;
   static const fieldHeight = 58.0;
-  static const buttonHeight = 58.0;
+  static const buttonHeight = 56.0;
+}
+
+/// One type scale for splash, home, crop and the library.
+///
+/// Sizes stay modest so the welcome screens do not shout compared with the
+/// screens after a scan. [fontFamily] is left unset so every style inherits
+/// the platform face from [AppTheme] — San Francisco on iOS, Roboto on
+/// Android — instead of mixing that with Material's hardcoded Roboto.
+class BrandType {
+  const BrandType._();
+
+  static const wordmark = 34.0;
+  static const wordmarkCompact = 24.0;
+
+  static const display = TextStyle(
+    fontSize: 24,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.4,
+    height: 1.22,
+    color: Brand.ink,
+  );
+
+  static const headline = TextStyle(
+    fontSize: 20,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.3,
+    height: 1.25,
+    color: Brand.ink,
+  );
+
+  static const title = TextStyle(
+    fontSize: 17,
+    fontWeight: FontWeight.w700,
+    height: 1.25,
+    color: Brand.ink,
+  );
+
+  static const body = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w500,
+    height: 1.4,
+    color: Brand.ink,
+  );
+
+  static const subtitle = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w500,
+    height: 1.4,
+    color: Brand.grey,
+  );
+
+  static const caption = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
+    height: 1.35,
+    color: Brand.grey,
+  );
+
+  static const button = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0,
+  );
+
+  static const link = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    color: Brand.blue,
+  );
 }
 
 /// The "Scanella" wordmark: navy "Scan", blue "ella".
 class ScanellaWordmark extends StatelessWidget {
-  const ScanellaWordmark({super.key, this.fontSize = 44});
+  const ScanellaWordmark({super.key, this.fontSize = BrandType.wordmark});
 
   final double fontSize;
 
@@ -50,7 +119,7 @@ class ScanellaWordmark extends StatelessWidget {
     final style = TextStyle(
       fontSize: fontSize,
       fontWeight: FontWeight.w800,
-      letterSpacing: -1.0,
+      letterSpacing: -0.8,
       height: 1.05,
     );
     return RichText(
@@ -220,10 +289,7 @@ class BrandButton extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: BrandType.button.copyWith(color: Colors.white),
                   ),
                   if (showArrow) ...[
                     const SizedBox(width: 10),
@@ -271,10 +337,10 @@ class BrandField extends StatelessWidget {
       textCapitalization: textCapitalization,
       validator: validator,
       autofillHints: autofillHints,
-      style: const TextStyle(fontSize: 16, color: Brand.ink),
+      style: BrandType.body,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Brand.greyLight, fontSize: 16),
+        hintStyle: BrandType.body.copyWith(color: Brand.greyLight),
         prefixIcon: Padding(
           padding: const EdgeInsets.only(left: 16, right: 12),
           child: Icon(icon, size: 21, color: Brand.greyLight),

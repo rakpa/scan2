@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/auth/domain/auth_controller.dart';
+import 'package:scan2/features/auth/presentation/widgets/auth_nav_bar.dart';
 import 'package:scan2/features/auth/presentation/widgets/social_row.dart';
 import 'package:scan2/features/onboarding/presentation/welcome_screen.dart';
 
@@ -60,18 +61,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                icon: const Icon(
-                  Icons.chevron_left_rounded,
-                  size: 32,
-                  color: Brand.blue,
-                ),
-                onPressed: () =>
-                    context.canPop() ? context.pop() : context.go('/welcome'),
-              ),
-            ),
+            const AuthNavBar(),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
@@ -79,27 +69,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   key: _formKey,
                   child: Column(
                     children: [
-                      const ScanellaAppMark(size: 88),
-                      const SizedBox(height: 14),
-                      const ScanellaWordmark(fontSize: 40),
+                      const ScanellaAppMark(size: 80),
+                      const SizedBox(height: 12),
+                      const ScanellaWordmark(),
                       const SizedBox(height: 4),
                       const Text(
                         'Scan. Save. Simplify.',
-                        style: TextStyle(fontSize: 16, color: Brand.grey),
+                        style: BrandType.subtitle,
                       ),
-                      const SizedBox(height: 34),
-                      const Text(
-                        'Welcome Back!',
-                        style: TextStyle(
-                          fontSize: 27,
-                          fontWeight: FontWeight.w800,
-                          color: Brand.ink,
-                        ),
-                      ),
+                      const SizedBox(height: 28),
+                      const Text('Welcome Back!', style: BrandType.display),
                       const SizedBox(height: 8),
                       const Text(
                         'Login to continue to your account',
-                        style: TextStyle(fontSize: 15, color: Brand.grey),
+                        style: BrandType.subtitle,
                       ),
                       const SizedBox(height: 28),
                       BrandField(
@@ -149,7 +132,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           const SizedBox(width: 10),
                           const Text(
                             'Remember me',
-                            style: TextStyle(fontSize: 15, color: Brand.ink),
+                            style: BrandType.body,
                           ),
                           const Spacer(),
                           GestureDetector(
@@ -159,11 +142,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                             child: const Text(
                               'Forgot Password?',
-                              style: TextStyle(
-                                fontSize: 15,
-                                color: Brand.blue,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: BrandType.link,
                             ),
                           ),
                         ],
@@ -187,11 +166,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               .continueWithoutAccount();
                           if (context.mounted) context.go('/library');
                         },
-                        child: const Text(
+                        child: Text(
                           'Continue without an account',
-                          style: TextStyle(
-                            color: Brand.grey,
-                            fontSize: 15,
+                          style: BrandType.caption.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),

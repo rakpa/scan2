@@ -23,7 +23,7 @@ class SocialSignInRow extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 14),
               child: Text(
                 'or continue with',
-                style: TextStyle(color: Brand.grey, fontSize: 14),
+                style: BrandType.caption,
               ),
             ),
             const Expanded(child: Divider(color: Brand.outline)),
@@ -100,8 +100,7 @@ class _ProviderButton extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14.5,
+                  style: BrandType.caption.copyWith(
                     fontWeight: FontWeight.w600,
                     color: Brand.ink,
                   ),

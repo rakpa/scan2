@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/export_service.dart';
 
@@ -26,7 +27,6 @@ class ExportSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final pageCount = document.pageCount;
     final pageLabel = '$pageCount page${pageCount == 1 ? '' : 's'}';
 
@@ -42,14 +42,9 @@ class ExportSheet extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(document.title, style: theme.textTheme.titleLarge),
+                  Text(document.title, style: BrandType.title),
                   const SizedBox(height: 2),
-                  Text(
-                    pageLabel,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  Text(pageLabel, style: BrandType.caption),
                 ],
               ),
             ),
@@ -103,28 +98,23 @@ class _ExportTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ListTile(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       leading: Container(
         width: 42,
         height: 42,
         decoration: BoxDecoration(
-          color: highlighted
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
+          color: highlighted ? Brand.blue : Brand.canvas,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(
           icon,
           size: 21,
-          color: highlighted
-              ? theme.colorScheme.onPrimary
-              : theme.colorScheme.onSurfaceVariant,
+          color: highlighted ? Colors.white : Brand.grey,
         ),
       ),
-      title: Text(title, style: theme.textTheme.titleSmall),
-      subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
+      title: Text(title, style: BrandType.title),
+      subtitle: Text(subtitle, style: BrandType.caption),
       onTap: () => Navigator.pop(context, action),
     );
   }

@@ -22,17 +22,13 @@ class WelcomeScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       const SizedBox(height: 18),
-                      const ScanellaAppMark(size: 112),
-                      const SizedBox(height: 20),
-                      const ScanellaWordmark(fontSize: 46),
+                      const ScanellaAppMark(size: 96),
+                      const SizedBox(height: 16),
+                      const ScanellaWordmark(),
                       const SizedBox(height: 6),
                       const Text(
                         'Document Scanner',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Brand.grey,
-                          fontWeight: FontWeight.w500,
-                        ),
+                        style: BrandType.subtitle,
                       ),
                       const SizedBox(height: 18),
                       const _Rule(),
@@ -40,16 +36,12 @@ class WelcomeScreen extends StatelessWidget {
                       const Text(
                         'Scan anything. Save everything.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Brand.ink,
-                        ),
+                        style: BrandType.headline,
                       ),
                       const SizedBox(height: 6),
                       const Text(
                         'Simple. Fast. Secure.',
-                        style: TextStyle(fontSize: 16, color: Brand.grey),
+                        style: BrandType.subtitle,
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -151,18 +143,11 @@ class _FooterPrompt extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(prompt, style: const TextStyle(color: Brand.grey, fontSize: 15)),
+        Text(prompt, style: BrandType.subtitle),
         const SizedBox(width: 5),
         GestureDetector(
           onTap: onTap,
-          child: Text(
-            action,
-            style: const TextStyle(
-              color: Brand.blue,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: Text(action, style: BrandType.link),
         ),
       ],
     );

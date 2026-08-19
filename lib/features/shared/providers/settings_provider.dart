@@ -64,6 +64,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   static const _filterKey = 'settings.defaultFilter';
   static const _shutterKey = 'settings.shutterSound';
   static const _inAppCameraKey = 'settings.useInAppCamera';
+  static const _nativeScanRestoreKey = 'settings.restoredNativeScan724';
 
   SharedPreferences? _prefs;
 
@@ -71,6 +72,14 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     try {
       final prefs = await SharedPreferences.getInstance();
       _prefs = prefs;
+
+      // Build 723 briefly opened the in-app camera by default, which skipped
+      // VisionKit / ML Kit auto-edge. Put capture back on the system scanner
+      // once, then honour the setting as before.
+      if (!(prefs.getBool(_nativeScanRestoreKey) ?? false)) {
+        await prefs.setBool(_inAppCameraKey, false);
+        await prefs.setBool(_nativeScanRestoreKey, true);
+      }
 
       final themeIndex = prefs.getInt(_themeKey);
       final filterIndex = prefs.getInt(_filterKey);

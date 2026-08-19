@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
 
@@ -14,7 +15,6 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
-    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: embedded ? Colors.transparent : null,
@@ -25,9 +25,9 @@ class SettingsScreen extends ConsumerWidget {
           padding: EdgeInsets.fromLTRB(16, 0, 16, embedded ? 140 : 32),
           children: [
             if (embedded)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
-                child: Text('Settings', style: theme.textTheme.headlineMedium),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(4, 12, 4, 6),
+                child: Text('Settings', style: BrandType.headline),
               ),
 
             const _SectionLabel('Scanning'),
@@ -71,9 +71,7 @@ class SettingsScreen extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
                   child: Text(
                     'Applied to new scans. Change it per page any time.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    style: BrandType.caption,
                   ),
                 ),
                 Padding(
@@ -164,17 +162,9 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 22, 8, 8),
-      child: Text(
-        label,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-        ),
-      ),
+      child: Text(label, style: BrandType.caption),
     );
   }
 }
@@ -188,20 +178,12 @@ class _Group extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // Material rather than a DecoratedBox: rows paint their ink splashes on
-    // the nearest Material ancestor, and a plain coloured box in between
-    // swallows the tap feedback entirely.
     return Material(
-      color: theme.brightness == Brightness.light
-          ? Colors.white
-          : theme.colorScheme.surfaceContainerLow,
+      color: Brand.surface,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
-        ),
+        side: const BorderSide(color: Brand.outline),
       ),
       child: Column(children: children),
     );
@@ -227,7 +209,6 @@ class _SwitchRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final enabled = onChanged != null;
     final text = subtitle;
 
@@ -240,17 +221,14 @@ class _SwitchRow extends StatelessWidget {
           secondary: Icon(
             icon,
             size: 22,
-            color: enabled ? theme.colorScheme.primary : theme.disabledColor,
+            color: enabled ? Brand.blue : Brand.greyLight,
           ),
-          title: Text(title, style: theme.textTheme.titleSmall),
+          title: Text(title, style: BrandType.title),
           subtitle: text == null
               ? null
               : Text(
                   text,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.3,
-                  ),
+                  style: BrandType.caption,
                 ),
         ),
         if (!last) const Divider(indent: 56, endIndent: 12),
