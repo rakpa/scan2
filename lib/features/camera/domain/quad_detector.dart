@@ -99,6 +99,19 @@ class Quad {
     );
   }
 
+  /// Fraction of the frame this quad covers (shoelace over normalized
+  /// coordinates, so the result is already a ratio).
+  double get areaRatio {
+    final pts = corners;
+    var area = 0.0;
+    for (var i = 0; i < pts.length; i++) {
+      final a = pts[i];
+      final b = pts[(i + 1) % pts.length];
+      area += a.dx * b.dy - b.dx * a.dy;
+    }
+    return area.abs() / 2;
+  }
+
   Quad lerp(Quad other, double t) {
     return Quad(
       topLeft: Offset.lerp(topLeft, other.topLeft, t)!,

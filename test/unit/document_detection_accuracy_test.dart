@@ -158,6 +158,45 @@ void main() {
         Offset(78, 127),
       ],
     ),
+    // Small documents. A hotel key card or receipt on a desk covers a few
+    // percent of the frame; a 10% area floor and a 25%-of-frame extent rule
+    // rejected these before scoring ever ran, so the guides never appeared.
+    (
+      name: 'key card, 5% of frame, on wood',
+      texture: 8,
+      background: 120,
+      falloff: 0.15,
+      corners: [
+        Offset(109, 64),
+        Offset(155, 64),
+        Offset(155, 103),
+        Offset(109, 103),
+      ],
+    ),
+    (
+      name: 'receipt, 8% of frame, on wood',
+      texture: 8,
+      background: 120,
+      falloff: 0.15,
+      corners: [
+        Offset(91, 45),
+        Offset(149, 45),
+        Offset(149, 90),
+        Offset(91, 90),
+      ],
+    ),
+    (
+      name: 'card, 12% of frame, on wood',
+      texture: 8,
+      background: 120,
+      falloff: 0.15,
+      corners: [
+        Offset(84, 41),
+        Offset(156, 41),
+        Offset(156, 95),
+        Offset(84, 95),
+      ],
+    ),
     (
       name: 'dark desk, bright page',
       texture: 4,
@@ -175,7 +214,12 @@ void main() {
   group('DocumentQuadDetector accuracy', () {
     for (final testCase in cases) {
       test('locates the page: ${testCase.name}', () {
+        // Small-document cases are laid out for the 240x135 landscape sensor
+        // buffer the app analyses; the rest use the default portrait-ish grid.
+        final small = testCase.name.contains('of frame');
         final scene = buildScene(
+          width: 240,
+          height: small ? 135 : 180,
           corners: testCase.corners,
           backgroundTexture: testCase.texture,
           backgroundBrightness: testCase.background,
@@ -221,6 +265,43 @@ void main() {
       final result = detector.detect(scene.luma, scene.width, scene.height);
       if (result != null) {
         expect(result.confidence, lessThan(0.85));
+      }
+    });
+
+    test('does not invent documents on empty surfaces', () {
+      // Loosening the size floor to catch small cards makes false positives
+      // the thing to watch, so several bare surfaces are checked directly.
+      const noDocument = [
+        Offset(-50, -50),
+        Offset(-40, -50),
+        Offset(-40, -40),
+        Offset(-50, -40),
+      ];
+      const surfaces = [
+        (name: 'plain desk', texture: 0.0, brightness: 120, noise: 3.0),
+        (name: 'wooden desk', texture: 9.0, brightness: 120, noise: 3.0),
+        (name: 'dark surface', texture: 5.0, brightness: 45, noise: 3.0),
+        (name: 'bright surface', texture: 6.0, brightness: 215, noise: 3.0),
+        (name: 'noisy low light', texture: 4.0, brightness: 70, noise: 12.0),
+      ];
+
+      for (final surface in surfaces) {
+        final scene = buildScene(
+          width: 240,
+          height: 135,
+          corners: noDocument,
+          text: false,
+          lightingFalloff: 0,
+          backgroundTexture: surface.texture,
+          backgroundBrightness: surface.brightness,
+          noise: surface.noise,
+        );
+        final result = detector.detect(scene.luma, scene.width, scene.height);
+        expect(
+          result,
+          isNull,
+          reason: 'invented a document on ${surface.name}',
+        );
       }
     });
 

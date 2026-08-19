@@ -39,15 +39,43 @@ class DocumentQuadDetector {
   const DocumentQuadDetector();
 
   /// Minimum fraction of the frame a document must cover to count.
-  static const _minAreaRatio = 0.10;
+  ///
+  /// Deliberately low. A hotel key card or a receipt held at arm's length
+  /// covers about 5% of the frame, and a 10% floor rejected those outright —
+  /// the guides simply never appeared. False positives are held off by the
+  /// polarity and edge-support scoring instead of by a size floor.
+  static const _minAreaRatio = 0.030;
+
+  /// Minimum extent of a document along each axis, as a fraction of the
+  /// frame. A card in landscape is short in one axis; requiring a quarter of
+  /// the frame in *both* threw those away before scoring.
+  static const _minExtentRatio = 0.11;
+
+  /// Gradient thresholds tried in order, as fractions of the scene's
+  /// strong-edge level. Strict first.
+  static const _thresholdFractions = [0.30, 0.12, 0.05];
+
+  /// Score at which a pass is accepted without trying more permissive ones.
+  static const _confidentEnough = 0.74;
+
+  /// Luminance step below which a border sample is treated as noise, and the
+  /// step at which it counts as a fully supported border.
+  static const _noiseFloor = 3.0;
+  static const _fullStep = 14.0;
 
   /// Hough slope range (± tan 31°) for "near-axis" document edges.
   static const _maxSlope = 0.6;
   static const _slopeBins = 21;
 
-  /// Candidate lines taken from each polarity accumulator. Four per side
-  /// keeps the quad search at a few hundred cheap evaluations.
-  static const _linesPerSide = 4;
+  /// Candidate lines taken from each polarity accumulator.
+  ///
+  /// Hough votes scale with line length, so a wood grain or table edge running
+  /// the full frame outvotes the short border of a card lying on it. Taking
+  /// only the top few peaks therefore drops the document's own edges before
+  /// scoring ever sees them. Taking more costs little: the vast majority of
+  /// combinations fail the cheap extent and convexity checks long before the
+  /// expensive edge-support sampling.
+  static const _linesPerSide = 8;
 
   /// Detects the dominant document quad in a grayscale [lum] grid of
   /// [width]×[height]. Returns null when nothing document-like is found.
@@ -112,21 +140,61 @@ class DocumentQuadDetector {
     }
     if (magCount == 0) return null;
 
-    // Keep roughly the strongest 10% of gradient pixels. A fixed threshold
-    // cannot serve both a black folder on a white desk and a white page on a
-    // light one; a percentile adapts to whatever contrast the scene has, and
-    // the candidate scoring downstream rejects what turns out to be noise.
-    final targetVoters = math.max(1, (magCount * 0.35).round());
-    var threshold = 20.0;
+    // Threshold relative to the scene's own strongest edges, not to a fixed
+    // value and not to a fixed share of pixels.
+    //
+    // A fixed threshold cannot serve both a black folder on a white desk and a
+    // white page on a light one. But letting a fixed *share* of pixels vote is
+    // worse on a textured surface: wood grain is weak yet covers the frame, so
+    // a generous share fills the accumulators with full-length grain lines
+    // that outvote the short borders of a card lying on the wood — the card's
+    // own edges never even become candidates.
+    //
+    // Measuring the strong-edge level and thresholding relative to it keeps
+    // real borders at any contrast while dropping texture that is an order of
+    // magnitude weaker than the dominant edges.
+    final strongTarget = math.max(1, (magCount * 0.02).round());
+    var strongLevel = 0.0;
     var running = 0;
     for (var bucket = 511; bucket >= 0; bucket--) {
       running += magHistogram[bucket];
-      if (running >= targetVoters) {
-        threshold = math.max(20.0, (bucket << 2).toDouble());
+      if (running >= strongTarget) {
+        strongLevel = (bucket << 2).toDouble();
         break;
       }
     }
+    // A single gradient threshold cannot serve every scene, and this is not a
+    // tuning failure — the requirements are opposed. Excluding wood grain or
+    // fabric weave needs a HIGH cut-off; catching a pale page on a pale desk
+    // needs a LOW one. When the strongest edges in frame are the printed text
+    // *inside* the page, no single value does both.
+    //
+    // So try several, strict first, and keep the best-scoring quad. The strict
+    // pass answers most scenes and returns immediately, so the extra passes
+    // are only paid for on the hard frames that need them.
+    QuadDetection? best;
+    for (final fraction in _thresholdFractions) {
+      final threshold = math.max(20.0, strongLevel * fraction);
+      final candidate = _detectAtThreshold(lum, gx, gy, w, h, threshold);
+      if (candidate == null) continue;
+      if (best == null || candidate.confidence > best.confidence) {
+        best = candidate;
+      }
+      // Good enough that a more permissive pass will not beat it.
+      if (candidate.confidence >= _confidentEnough) return candidate;
+    }
+    return best;
+  }
 
+  /// One Hough pass at a fixed gradient [threshold].
+  QuadDetection? _detectAtThreshold(
+    Uint8List lum,
+    Int16List gx,
+    Int16List gy,
+    int w,
+    int h,
+    double threshold,
+  ) {
     // Four accumulators: near-vertical lines (x = a·y + b) and near-horizontal
     // lines (y = c·x + d), each split by the sign of the crossing gradient.
     final bOffset = (_maxSlope * h).ceil();
@@ -165,8 +233,11 @@ class DocumentQuadDetector {
       }
     }
 
-    final minVotesV = math.max(6, (0.15 * h).round());
-    final minVotesH = math.max(6, (0.15 * w).round());
+    // A small document's border is only as long as the document, so the vote
+    // floor has to sit under _minExtentRatio or its edges never become
+    // candidate lines at all.
+    final minVotesV = math.max(5, (_minExtentRatio * 0.7 * h).round());
+    final minVotesH = math.max(5, (_minExtentRatio * 0.7 * w).round());
     final vPos = _topLines(
       accVPos,
       bCount,
@@ -228,14 +299,14 @@ class DocumentQuadDetector {
         // A page is at least this wide, and its sides do not cross.
         final lx = left.positionAt(h / 2);
         final rx = right.positionAt(h / 2);
-        if (rx - lx < 0.25 * w) continue;
+        if (rx - lx < _minExtentRatio * w) continue;
         if ((left.slope - right.slope).abs() > 0.5) continue;
 
         for (final top in topLines) {
           for (final bottom in bottomLines) {
             final ty = top.positionAt(w / 2);
             final by = bottom.positionAt(w / 2);
-            if (by - ty < 0.25 * h) continue;
+            if (by - ty < _minExtentRatio * h) continue;
             if ((top.slope - bottom.slope).abs() > 0.5) continue;
 
             final corners = <Offset>[];
@@ -275,7 +346,7 @@ class DocumentQuadDetector {
               ordered,
               pageIsBright,
             );
-            if (support.consistency < 0.55) continue;
+            if (support.consistency < 0.46) continue;
 
             // Prefer strong, consistent borders; break ties toward the larger
             // quad, because the page always encloses whatever is printed on it.
@@ -633,10 +704,6 @@ class DocumentQuadDetector {
     List<Offset> corners,
     bool pageIsBright,
   ) {
-    var consistent = 0;
-    var total = 0;
-    var contrastSum = 0.0;
-
     double lumAt(double x, double y) {
       final xi = x.round().clamp(0, w - 1);
       final yi = y.round().clamp(0, h - 1);
@@ -651,6 +718,12 @@ class DocumentQuadDetector {
       corners.map((c) => c.dx).reduce((a, b) => a + b) / 4,
       corners.map((c) => c.dy).reduce((a, b) => a + b) / 4,
     );
+
+    var weakestEdge = 1.0;
+    var supportSum = 0.0;
+    var contrastSum = 0.0;
+    var edgeCount = 0;
+    var sampleCount = 0;
 
     for (var i = 0; i < 4; i++) {
       final a = corners[i];
@@ -667,6 +740,9 @@ class DocumentQuadDetector {
       }
 
       final steps = math.max(8, len ~/ 3);
+      var edgeSupport = 0.0;
+      var edgeSamples = 0;
+
       // Skip the ends: corners are where two edges blur together.
       for (var s = 2; s < steps - 1; s++) {
         final t = s / steps;
@@ -680,16 +756,40 @@ class DocumentQuadDetector {
           p.dy + normal.dy * probe,
         );
         final diff = pageIsBright ? inside - outside : outside - inside;
-        total++;
+
+        // Soft ramp rather than a hard cut. A page on a similarly toned desk
+        // has a real but shallow border; a fixed cutoff scored it the same as
+        // no border at all and the correct quad lost to a sliver of high
+        // contrast elsewhere in the frame.
+        final graded = diff <= _noiseFloor
+            ? 0.0
+            : math.min(1.0, (diff - _noiseFloor) / _fullStep);
+
+        edgeSupport += graded;
         contrastSum += diff;
-        if (diff > 8) consistent++;
+        edgeSamples++;
+        sampleCount++;
       }
+
+      if (edgeSamples == 0) continue;
+      final normalized = edgeSupport / edgeSamples;
+      weakestEdge = math.min(weakestEdge, normalized);
+      supportSum += normalized;
+      edgeCount++;
     }
 
-    if (total == 0) return const _EdgeSupport(consistency: 0, contrast: 0);
+    if (edgeCount == 0 || sampleCount == 0) {
+      return const _EdgeSupport(consistency: 0, contrast: 0);
+    }
+
+    // Weighted toward the *weakest* border. A document is bounded on all four
+    // sides; a quad that takes three real edges and runs its fourth off into
+    // the background scores well on an average and is exactly the failure this
+    // has to reject.
+    final mean = supportSum / edgeCount;
     return _EdgeSupport(
-      consistency: consistent / total,
-      contrast: contrastSum / total,
+      consistency: 0.35 * mean + 0.65 * weakestEdge,
+      contrast: contrastSum / sampleCount,
     );
   }
 }

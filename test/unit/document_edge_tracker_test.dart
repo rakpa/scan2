@@ -127,6 +127,51 @@ void main() {
       expect(captures, 1, reason: 'the next page should scan');
     });
 
+    test(
+      'a document too small to scan well is not captured automatically',
+      () async {
+        // A key card at arm's length: detected confidently, but only ~4% of the
+        // frame. Capturing there wastes almost the whole sensor.
+        const tiny = Quad(
+          topLeft: Offset(0.44, 0.46),
+          topRight: Offset(0.56, 0.46),
+          bottomRight: Offset(0.56, 0.80),
+          bottomLeft: Offset(0.44, 0.80),
+        );
+        expect(
+          tiny.areaRatio,
+          lessThan(DocumentEdgeTracker.minAutoCaptureArea),
+        );
+
+        tracker.start();
+        for (var i = 0; i < 6; i++) {
+          tracker.updateFromFrame(detected: tiny, confidence: 0.95);
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+
+        expect(captures, 0, reason: 'would produce an unreadable scan');
+        expect(tracker.value.phase, ScanPhase.tooFar);
+        // The guides must still track it, so the user can see it is recognised
+        // and reach for the shutter if they want it anyway.
+        expect(tracker.value.hasDocument, isTrue);
+      },
+    );
+
+    test('moving closer lets the same document capture', () async {
+      tracker.start();
+      for (var i = 0; i < 4; i++) {
+        tracker.updateFromFrame(detected: _page, confidence: 0.95);
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+      }
+      expect(
+        _page.areaRatio,
+        greaterThan(DocumentEdgeTracker.minAutoCaptureArea),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      expect(captures, 1);
+    });
+
     test('losing the page resets progress and the guide relaxes', () async {
       tracker.start();
       for (var i = 0; i < 3; i++) {

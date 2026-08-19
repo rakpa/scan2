@@ -9,6 +9,7 @@ import 'package:scan2/features/camera/domain/quad_detector.dart';
 enum ScanPhase {
   searching('Point the camera at a document'),
   positioning('Fit the whole page in view'),
+  tooFar('Move closer to the document'),
   holdSteady('Hold steady…'),
   capturing('Capturing'),
   captured('Page captured');
@@ -95,7 +96,23 @@ class DocumentEdgeTracker {
   });
 
   /// Confidence below which the detection is ignored entirely.
-  static const minTrackConfidence = 0.55;
+  ///
+  /// Set below the weakest genuine detections (a pale page on a pale desk
+  /// scores ~0.52) rather than above the strongest false positives (heavy
+  /// surface texture can reach ~0.66). The two ranges overlap, so this cannot
+  /// separate them — showing a guide that turns out to be wrong costs the user
+  /// nothing, whereas hiding one on a real document looks broken.
+  /// [autoCaptureConfidence] is what actually has to be safe.
+  static const minTrackConfidence = 0.50;
+
+  /// Smallest share of the frame a document may cover and still be captured
+  /// automatically.
+  ///
+  /// A card filling 5% of the frame is detected accurately, but capturing it
+  /// there wastes 95% of the sensor and yields an unreadable scan. Below this
+  /// the guides still track; the user is asked to move closer, and can always
+  /// override with the shutter.
+  static const minAutoCaptureArea = 0.12;
 
   /// Confidence required before the hold timer can start.
   static const autoCaptureConfidence = 0.78;
@@ -214,7 +231,8 @@ class DocumentEdgeTracker {
     final steady =
         _confidence >= autoCaptureConfidence &&
         _lastDetection != null &&
-        _missedFrames == 0;
+        _missedFrames == 0 &&
+        !_isTooFar;
 
     if (steady) {
       _steadyFor += elapsed;
@@ -233,6 +251,12 @@ class DocumentEdgeTracker {
     }
 
     _publish();
+  }
+
+  /// True when a real document is tracked but is too small to capture well.
+  bool get _isTooFar {
+    final detection = _lastDetection;
+    return detection != null && detection.areaRatio < minAutoCaptureArea;
   }
 
   bool _inCooldown(DateTime now) {
@@ -281,6 +305,7 @@ class DocumentEdgeTracker {
     if (_lastDetection == null || _confidence < minTrackConfidence) {
       return ScanPhase.searching;
     }
+    if (_isTooFar) return ScanPhase.tooFar;
     if (_confidence < autoCaptureConfidence) return ScanPhase.positioning;
     return ScanPhase.holdSteady;
   }

@@ -664,6 +664,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
                       switch (state.phase) {
                         ScanPhase.searching => Icons.search,
                         ScanPhase.positioning => Icons.crop_free,
+                        ScanPhase.tooFar => Icons.zoom_in,
                         ScanPhase.holdSteady => Icons.center_focus_strong,
                         ScanPhase.capturing => Icons.camera,
                         ScanPhase.captured => Icons.check_circle,
