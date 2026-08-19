@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:scan2/core/widgets/page_thumbnail.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/library/data/document_store.dart';
 import 'package:scan2/features/library/domain/document.dart';
@@ -29,7 +28,6 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     // Cached in a provider so an unrelated rebuild (a dialog opening, the
     // busy flag flipping) does not re-read the document and blank the list.
     final document = ref.watch(documentProvider(widget.documentId)).valueOrNull;
@@ -104,23 +102,23 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
+                    SizedBox(
+                      width: 54,
+                      height: 50,
+                      child: OutlinedButton(
                         onPressed: () => context.push('/camera'),
-                        icon: const Icon(Icons.add, size: 20),
-                        label: const Text('Add pages'),
+                        style: OutlinedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                        ),
+                        child: const Icon(Icons.add_rounded, size: 24),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      flex: 2,
                       child: FilledButton.icon(
                         onPressed: _busy ? null : () => _export(document),
-                        icon: const Icon(Icons.ios_share, size: 20),
+                        icon: const Icon(Icons.ios_share_rounded, size: 20),
                         label: const Text('Export'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary,
-                        ),
                       ),
                     ),
                   ],
@@ -324,19 +322,11 @@ class _PageCard extends StatelessWidget {
                   child: SizedBox(
                     width: 72,
                     height: 96,
-                    child: kIsWeb
-                        ? ColoredBox(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                          )
-                        : Image.file(
-                            File(page.path),
-                            fit: BoxFit.cover,
-                            cacheWidth: 216,
-                            errorBuilder: (_, __, ___) => Icon(
-                              Icons.broken_image_outlined,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
+                    child: PageThumbnail(
+                      path: page.path,
+                      cacheWidth: 216,
+                      seed: index + 1,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 16),

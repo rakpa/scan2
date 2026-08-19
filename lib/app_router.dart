@@ -6,7 +6,7 @@ import 'package:scan2/features/camera/presentation/native_scan_screen.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/crop/presentation/crop_screen.dart';
 import 'package:scan2/features/library/presentation/document_detail_screen.dart';
-import 'package:scan2/features/library/presentation/library_screen.dart';
+import 'package:scan2/features/home/presentation/home_shell.dart';
 import 'package:scan2/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
 import 'package:scan2/features/shared/providers/onboarding_provider.dart';
@@ -31,7 +31,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/library',
-        builder: (context, state) => const LibraryScreen(),
+        builder: (context, state) => const HomeShell(),
         routes: [
           GoRoute(
             path: 'document/:id',

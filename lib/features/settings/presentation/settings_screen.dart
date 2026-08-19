@@ -4,7 +4,11 @@ import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.embedded = false});
+
+  /// True when shown as a tab inside the shell, which supplies its own
+  /// scaffold and bottom bar.
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -13,117 +17,148 @@ class SettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          _SectionHeader('Scanning'),
-          SwitchListTile(
-            secondary: const Icon(Icons.document_scanner_outlined),
-            title: const Text('Use the in-app camera'),
-            subtitle: const Text(
-              'Off: capture with the system document scanner, which detects '
-              'edges best. On: use Scan2\'s camera with its live overlay and '
-              'batch strip.',
-            ),
-            value: settings.useInAppCamera,
-            onChanged: notifier.setUseInAppCamera,
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.motion_photos_auto_outlined),
-            title: const Text('Auto-capture'),
-            subtitle: const Text(
-              'In-app camera only. Takes the shot once the page is in frame '
-              'and the phone is steady.',
-            ),
-            value: settings.autoCapture,
-            onChanged: settings.useInAppCamera ? notifier.setAutoCapture : null,
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.volume_up_outlined),
-            title: const Text('Shutter sound'),
-            value: settings.shutterSound,
-            onChanged: settings.useInAppCamera
-                ? notifier.setShutterSound
-                : null,
-          ),
-          const Divider(height: 32),
-
-          _SectionHeader('Enhancement'),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              'Applied to new scans. You can change it per page afterwards.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+      backgroundColor: embedded ? Colors.transparent : null,
+      appBar: embedded ? null : AppBar(title: const Text('Settings')),
+      body: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, embedded ? 140 : 32),
+          children: [
+            if (embedded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+                child: Text('Settings', style: theme.textTheme.headlineMedium),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
+
+            const _SectionLabel('Scanning'),
+            _Group(
               children: [
-                for (final filter in ScanFilter.values)
-                  ChoiceChip(
-                    label: Text(ImageProcessor.labelFor(filter)),
-                    selected: settings.defaultFilter == filter,
-                    showCheckmark: false,
-                    onSelected: (_) => notifier.setDefaultFilter(filter),
+                _SwitchRow(
+                  icon: Icons.document_scanner_outlined,
+                  title: 'Use the in-app camera',
+                  subtitle:
+                      'Off uses the system scanner, which finds edges '
+                      'best. On adds a live overlay and batch strip.',
+                  value: settings.useInAppCamera,
+                  onChanged: notifier.setUseInAppCamera,
+                ),
+                _SwitchRow(
+                  icon: Icons.motion_photos_auto_outlined,
+                  title: 'Auto-capture',
+                  subtitle: 'Shoots once the page is steady.',
+                  value: settings.autoCapture,
+                  // Only meaningful for the in-app camera.
+                  onChanged: settings.useInAppCamera
+                      ? notifier.setAutoCapture
+                      : null,
+                ),
+                _SwitchRow(
+                  icon: Icons.volume_up_outlined,
+                  title: 'Shutter sound',
+                  value: settings.shutterSound,
+                  onChanged: settings.useInAppCamera
+                      ? notifier.setShutterSound
+                      : null,
+                  last: true,
+                ),
+              ],
+            ),
+
+            const _SectionLabel('Default enhancement'),
+            _Group(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                  child: Text(
+                    'Applied to new scans. Change it per page any time.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-              ],
-            ),
-          ),
-          const Divider(height: 32),
-
-          _SectionHeader('Appearance'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SegmentedButton<ThemeMode>(
-              segments: const [
-                ButtonSegment(
-                  value: ThemeMode.system,
-                  label: Text('System'),
-                  icon: Icon(Icons.brightness_auto_outlined),
                 ),
-                ButtonSegment(
-                  value: ThemeMode.light,
-                  label: Text('Light'),
-                  icon: Icon(Icons.light_mode_outlined),
-                ),
-                ButtonSegment(
-                  value: ThemeMode.dark,
-                  label: Text('Dark'),
-                  icon: Icon(Icons.dark_mode_outlined),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 14),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final filter in ScanFilter.values)
+                        ChoiceChip(
+                          label: Text(ImageProcessor.labelFor(filter)),
+                          selected: settings.defaultFilter == filter,
+                          onSelected: (_) => notifier.setDefaultFilter(filter),
+                        ),
+                    ],
+                  ),
                 ),
               ],
-              selected: {settings.themeMode},
-              onSelectionChanged: (selection) =>
-                  notifier.setThemeMode(selection.first),
             ),
-          ),
-          const Divider(height: 32),
 
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('About Scan2'),
-            subtitle: const Text('Offline document scanner'),
-            onTap: () => showAboutDialog(
-              context: context,
-              applicationName: 'Scan2',
-              applicationVersion: '1.0.1',
-              applicationLegalese:
-                  'Scans stay on your device. Nothing is uploaded.',
+            const _SectionLabel('Appearance'),
+            _Group(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SegmentedButton<ThemeMode>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        label: Text('System'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        label: Text('Light'),
+                        icon: Icon(Icons.light_mode_outlined, size: 17),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        label: Text('Dark'),
+                        icon: Icon(Icons.dark_mode_outlined, size: 17),
+                      ),
+                    ],
+                    selected: {settings.themeMode},
+                    onSelectionChanged: (selection) =>
+                        notifier.setThemeMode(selection.first),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+
+            const _SectionLabel('About'),
+            _Group(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.lock_outline_rounded),
+                  title: const Text('Everything stays on your device'),
+                  subtitle: const Text('No accounts, no uploads.'),
+                  dense: true,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline_rounded),
+                  title: const Text('About Scan2'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => showAboutDialog(
+                    context: context,
+                    applicationName: 'Scan2',
+                    applicationVersion: '1.0.2',
+                    applicationLegalese:
+                        'Scans stay on your device. Nothing is uploaded.',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.label);
+/// A quiet section label. Loud coloured headings make a settings list look
+/// like a form; these should recede and let the groups do the structuring.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.label);
 
   final String label;
 
@@ -131,15 +166,95 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      padding: const EdgeInsets.fromLTRB(8, 22, 8, 8),
       child: Text(
-        label.toUpperCase(),
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
+        label,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
         ),
       ),
+    );
+  }
+}
+
+/// Rows grouped into one rounded surface, the shape people expect settings to
+/// take on a phone.
+class _Group extends StatelessWidget {
+  const _Group({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Material rather than a DecoratedBox: rows paint their ink splashes on
+    // the nearest Material ancestor, and a plain coloured box in between
+    // swallows the tap feedback entirely.
+    return Material(
+      color: theme.brightness == Brightness.light
+          ? Colors.white
+          : theme.colorScheme.surfaceContainerLow,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
+        ),
+      ),
+      child: Column(children: children),
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+    this.last = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final enabled = onChanged != null;
+    final text = subtitle;
+
+    return Column(
+      children: [
+        SwitchListTile(
+          value: value,
+          onChanged: onChanged,
+          contentPadding: const EdgeInsets.fromLTRB(16, 4, 12, 4),
+          secondary: Icon(
+            icon,
+            size: 22,
+            color: enabled ? theme.colorScheme.primary : theme.disabledColor,
+          ),
+          title: Text(title, style: theme.textTheme.titleSmall),
+          subtitle: text == null
+              ? null
+              : Text(
+                  text,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.3,
+                  ),
+                ),
+        ),
+        if (!last) const Divider(indent: 56, endIndent: 12),
+      ],
     );
   }
 }

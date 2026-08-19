@@ -15,15 +15,22 @@ class AppTheme {
   /// stock Material blue.
   static const seed = Color(0xFF2B4ACB);
 
+  /// Material 3 tones a seed down considerably; the brand colour is pinned
+  /// back so buttons and the scan target keep their intended saturation.
+  static const _brand = Color(0xFF3355E8);
+
   static ThemeData get light => _build(Brightness.light);
   static ThemeData get dark => _build(Brightness.dark);
 
   static ThemeData _build(Brightness brightness) {
     final isLight = brightness == Brightness.light;
-    final scheme = ColorScheme.fromSeed(
+    final generated = ColorScheme.fromSeed(
       seedColor: seed,
       brightness: brightness,
     );
+    final scheme = isLight
+        ? generated.copyWith(primary: _brand, onPrimary: Colors.white)
+        : generated;
 
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);
     final text = base.textTheme;
@@ -106,6 +113,15 @@ class AppTheme {
       ),
       listTileTheme: const ListTileThemeData(
         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      ),
+      bottomAppBarTheme: BottomAppBarThemeData(
+        // The scaffold sits on a tinted off-white, so the bar needs its own
+        // lighter surface or it disappears and content appears to float over
+        // the navigation.
+        color: isLight ? Colors.white : scheme.surfaceContainerHigh,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        height: 68,
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: isLight ? Colors.white : scheme.surfaceContainerLow,

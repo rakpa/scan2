@@ -9,8 +9,41 @@ import 'package:scan2/features/library/domain/document_repository.dart';
 /// In-memory library used for the browser demo, where there is no file system
 /// to persist to and no camera to scan with.
 class WebDemoRepository implements DocumentRepository {
+  WebDemoRepository({bool seedSampleData = false}) {
+    if (seedSampleData) _seed();
+  }
+
   final List<Document> _documents = [];
   int _nextId = 1;
+
+  /// Sample documents for the browser demo, where there is no camera to
+  /// produce any. Page thumbnails fall back to the drawn stand-in.
+  void _seed() {
+    const titles = [
+      'Rental agreement',
+      'Passport',
+      'Invoice 2043',
+      'Hotel receipt',
+      'Insurance policy',
+      'Bank statement',
+    ];
+    const pageCounts = [4, 1, 2, 1, 9, 3];
+    final now = DateTime.now();
+
+    for (var i = 0; i < titles.length; i++) {
+      _documents.add(
+        Document(
+          id: _nextId++,
+          title: titles[i],
+          createdAt: now.subtract(Duration(days: i * 3, hours: i * 5)),
+          pages: [
+            for (var p = 0; p < pageCounts[i]; p++)
+              ScanPage(path: 'demo_${i}_$p'),
+          ],
+        ),
+      );
+    }
+  }
 
   @override
   Future<List<Document>> getAllDocuments() async =>
@@ -116,7 +149,7 @@ void bumpLibrary(WidgetRef ref) {
 
 /// The app's document library.
 final documentRepositoryProvider = Provider<DocumentRepository>((ref) {
-  if (kIsWeb) return WebDemoRepository();
+  if (kIsWeb) return WebDemoRepository(seedSampleData: true);
   final store = DocumentStore();
   ref.onDispose(store.close);
   return store;
