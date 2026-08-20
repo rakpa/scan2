@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -65,6 +66,98 @@ Future<void> importGalleryAsDocument(
           adjustments: result.adjustments,
         ),
       );
+    }
+
+    final doc = await repository.createProcessedDocument(
+      pages: processed,
+      title: title,
+    );
+    bumpLibrary(ref);
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    context.push('/library/document/${doc.id}');
+  } catch (e) {
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('Could not import: $e')));
+  }
+}
+
+/// Picks images (and PDFs) from the system Files UI and files them locally.
+Future<void> importFilesAsDocument(
+  BuildContext context,
+  WidgetRef ref, {
+  String title = 'Imported files',
+}) async {
+  if (kIsWeb) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Import is available on a device.')),
+      );
+    return;
+  }
+
+  final picked = await FilePicker.pickFiles(
+    allowMultiple: true,
+    type: FileType.custom,
+    allowedExtensions: const ['jpg', 'jpeg', 'png', 'heic', 'webp', 'pdf'],
+  );
+  final files = picked?.files ?? const [];
+  if (files.isEmpty || !context.mounted) return;
+
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(child: CircularProgressIndicator()),
+  );
+
+  try {
+    final repository = ref.read(documentRepositoryProvider);
+    if (repository is! DocumentStore) {
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      return;
+    }
+
+    const processor = PageProcessor();
+    final filter = ref.read(settingsProvider).defaultFilter;
+    final processed = <ProcessedPage>[];
+    for (final file in files) {
+      var path = file.path;
+      if (path == null || path.isEmpty) {
+        final bytes = file.bytes;
+        if (bytes == null) continue;
+        final temp = File(
+          '${Directory.systemTemp.path}/scanella_import_${file.name}',
+        );
+        await temp.writeAsBytes(bytes, flush: true);
+        path = temp.path;
+      }
+      if (path.toLowerCase().endsWith('.pdf')) continue;
+      final result = await processor.process(
+        imagePath: path,
+        adjustments: ScanAdjustments(filter: filter),
+      );
+      processed.add(
+        ProcessedPage(
+          originalPath: path,
+          bytes: result.bytes,
+          quad: result.quad ?? const Quad.fullFrame(),
+          adjustments: result.adjustments,
+        ),
+      );
+    }
+
+    if (processed.isEmpty) {
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No images were selected.')),
+      );
+      return;
     }
 
     final doc = await repository.createProcessedDocument(

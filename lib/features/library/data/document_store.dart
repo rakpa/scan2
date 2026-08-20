@@ -59,7 +59,7 @@ class DocumentStore implements DocumentRepository {
       debugPrint('Library manifest unreadable, rebuilding from disk: $e');
       await _rebuildFromDisk();
     }
-    await _ensureDefaultFolders(persist: false);
+    await _ensureDefaultFolders(persist: true);
   }
 
   Future<void> _restore(Map<String, dynamic> raw) async {
@@ -102,6 +102,7 @@ class DocumentStore implements DocumentRepository {
           folderId:
               (entry['folderId'] as num?)?.toInt() ??
               DocumentFolder.invoicesId,
+          favorited: entry['favorited'] as bool? ?? false,
         ),
       );
     }
@@ -132,10 +133,28 @@ class DocumentStore implements DocumentRepository {
   }
 
   Future<void> _ensureDefaultFolders({required bool persist}) async {
-    if (_folders.isNotEmpty) return;
-    _folders.addAll(DocumentFolder.defaults);
-    _nextFolderId = _folders.fold<int>(0, (max, f) => f.id > max ? f.id : max) + 1;
-    if (persist) await _persist();
+    var changed = false;
+    if (_folders.isEmpty) {
+      _folders.addAll(DocumentFolder.defaults);
+      changed = true;
+    } else {
+      const renames = {'IDs': 'ID Cards', 'Personal': 'Other'};
+      for (var i = 0; i < _folders.length; i++) {
+        final next = renames[_folders[i].name];
+        if (next == null) continue;
+        _folders[i] = DocumentFolder(id: _folders[i].id, name: next);
+        changed = true;
+      }
+      final names = {for (final folder in _folders) folder.name};
+      for (final folder in DocumentFolder.defaults) {
+        if (names.contains(folder.name)) continue;
+        _folders.add(DocumentFolder(id: _nextFolderId++, name: folder.name));
+        changed = true;
+      }
+    }
+    final highest = _folders.fold<int>(0, (max, f) => f.id > max ? f.id : max);
+    if (_nextFolderId <= highest) _nextFolderId = highest + 1;
+    if (persist && changed) await _persist();
   }
 
   ScanPage? _pageFromJson(Object? raw, String root) {
@@ -302,6 +321,7 @@ class DocumentStore implements DocumentRepository {
       createdAt: now,
       pages: pages,
       edgesAlreadyApplied: edgesAlreadyApplied,
+      folderId: DocumentFolder.invoicesId,
     );
     _documents.insert(0, doc);
     await _persist();
@@ -403,6 +423,16 @@ class DocumentStore implements DocumentRepository {
     final index = _documents.indexWhere((d) => d.id == documentId);
     if (index == -1) return null;
     final updated = _documents[index].copyWith(folderId: folderId);
+    _documents[index] = updated;
+    await _persist();
+    return updated;
+  }
+
+  Future<Document?> setFavorited(int documentId, bool favorited) async {
+    await ensureLoaded();
+    final index = _documents.indexWhere((d) => d.id == documentId);
+    if (index == -1) return null;
+    final updated = _documents[index].copyWith(favorited: favorited);
     _documents[index] = updated;
     await _persist();
     return updated;
@@ -718,6 +748,7 @@ class DocumentStore implements DocumentRepository {
               if (doc.fileSizeBytes != null) 'fileSizeBytes': doc.fileSizeBytes,
               'documentType': doc.documentType,
               if (doc.folderId != null) 'folderId': doc.folderId,
+              'favorited': doc.favorited,
               'pages': [
                 for (final page in doc.pages)
                   {

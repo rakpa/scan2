@@ -252,7 +252,13 @@ void main() {
     );
     expect(doc.folderId, 1);
     final folders = await store.getFolders();
-    expect(folders.map((f) => f.name), containsAll(['Invoices', 'Receipts']));
+    expect(folders.map((f) => f.name), containsAll([
+      'Invoices',
+      'Receipts',
+      'Notes',
+      'ID Cards',
+      'Other',
+    ]));
 
     final receipts = folders.firstWhere((f) => f.name == 'Receipts');
     final moved = await store.setDocumentFolder(doc.id, receipts.id);
@@ -283,5 +289,53 @@ void main() {
     expect(File(copy.pdfPath!).existsSync(), isTrue);
 
     expect(await store.getAllDocuments(), hasLength(2));
+  });
+
+  test('favorite flag survives a restart', () async {
+    final store = newStore();
+    final doc = await store.createProcessedDocument(
+      pages: [processed(capture('a.jpg', 1), 200)],
+    );
+    expect(doc.favorited, isFalse);
+    await store.setFavorited(doc.id, true);
+    final reopened = (await newStore().getAllDocuments()).single;
+    expect(reopened.favorited, isTrue);
+  });
+
+  test('legacy folder names migrate on launch', () async {
+    final documentsDir = Directory(p.join(tempRoot.path, 'documents'))
+      ..createSync(recursive: true);
+    File(p.join(documentsDir.path, 'library.json')).writeAsStringSync('''
+{
+  "version": 2,
+  "nextId": 1,
+  "nextFolderId": 5,
+  "folders": [
+    {"id": 1, "name": "Invoices"},
+    {"id": 2, "name": "Receipts"},
+    {"id": 3, "name": "Personal"},
+    {"id": 4, "name": "IDs"}
+  ],
+  "documents": []
+}
+''');
+
+    final folders = await newStore().getFolders();
+    expect(folders.map((f) => f.name), containsAll([
+      'Invoices',
+      'Receipts',
+      'Notes',
+      'ID Cards',
+      'Other',
+    ]));
+    expect(folders.where((f) => f.name == 'Personal'), isEmpty);
+    expect(folders.where((f) => f.name == 'IDs'), isEmpty);
+
+    final persisted = await newStore().getFolders();
+    expect(persisted.map((f) => f.name), containsAll([
+      'ID Cards',
+      'Other',
+      'Notes',
+    ]));
   });
 }

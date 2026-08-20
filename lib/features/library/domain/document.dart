@@ -65,6 +65,7 @@ class Document {
     this.pdfPath,
     this.fileSizeBytes,
     this.documentType = 'Image',
+    this.favorited = false,
   });
 
   final int id;
@@ -86,6 +87,8 @@ class Document {
   /// `PDF` or `Image`.
   final String documentType;
 
+  final bool favorited;
+
   int get pageCount => pages.length;
 
   List<String> get pagePaths => [for (final page in pages) page.path];
@@ -93,6 +96,12 @@ class Document {
   String get fileName => pdfPath != null ? '$title.pdf' : title;
 
   String? get thumbnailPath => pages.isEmpty ? null : pages.first.path;
+
+  /// Badge shown on the library thumbnail: PDF when a PDF was filed.
+  String get typeLabel {
+    if (pdfPath != null || documentType.toUpperCase() == 'PDF') return 'PDF';
+    return 'JPG';
+  }
 
   String get formattedSize {
     final bytes = fileSizeBytes;
@@ -127,6 +136,7 @@ class Document {
     String? pdfPath,
     int? fileSizeBytes,
     String? documentType,
+    bool? favorited,
   }) {
     return Document(
       id: id ?? this.id,
@@ -138,6 +148,7 @@ class Document {
       pdfPath: pdfPath ?? this.pdfPath,
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
       documentType: documentType ?? this.documentType,
+      favorited: favorited ?? this.favorited,
     );
   }
 }

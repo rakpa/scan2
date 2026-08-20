@@ -4,21 +4,28 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/core/widgets/page_thumbnail.dart';
+import 'package:scan2/features/library/data/document_store.dart';
 import 'package:scan2/features/library/domain/document.dart';
+import 'package:scan2/features/library/domain/document_folder.dart';
+import 'package:scan2/features/library/domain/export_service.dart';
+import 'package:scan2/features/library/domain/gallery_import.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
 
 enum DocumentSort {
-  newest('Newest first'),
-  oldest('Oldest first'),
-  name('Name'),
-  pages('Most pages');
+  newest('Date (Newest)'),
+  oldest('Date (Oldest)'),
+  nameAz('Name A-Z'),
+  nameZa('Name Z-A'),
+  size('File size');
 
   const DocumentSort(this.label);
 
   final String label;
 }
 
-/// The documents workspace: search, sort, grid or list, and multi-select.
+enum _DateFilter { any, today, week, month }
+
+/// Screen 12: local document library.
 class DocumentsView extends ConsumerStatefulWidget {
   const DocumentsView({super.key, this.highlightDocumentId});
 
@@ -30,12 +37,28 @@ class DocumentsView extends ConsumerStatefulWidget {
 }
 
 class _DocumentsViewState extends ConsumerState<DocumentsView> {
-  String _query = '';
-  DocumentSort _sort = DocumentSort.newest;
-  bool _gridView = true;
-  final Set<int> _selected = {};
+  static const _exporter = ExportService();
 
-  bool get _selecting => _selected.isNotEmpty;
+  String _query = '';
+  bool _searchOpen = false;
+  DocumentSort _sort = DocumentSort.newest;
+  bool _gridView = false;
+  String _category = 'All';
+  String? _typeFilter;
+  _DateFilter _dateFilter = _DateFilter.any;
+  bool _favoritesOnly = false;
+  bool _busy = false;
+
+  DocumentStore? get _store {
+    final repo = ref.read(documentRepositoryProvider);
+    return repo is DocumentStore ? repo : null;
+  }
+
+  List<DocumentFolder> get _folders {
+    final cached = _store?.cachedFolders;
+    if (cached != null && cached.isNotEmpty) return cached;
+    return DocumentFolder.defaults;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,60 +68,123 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
     final loading = all == null && async.isLoading;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Brand.surface,
       body: SafeArea(
         bottom: false,
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: _selecting
-                  ? _SelectionBar(
-                      count: _selected.length,
-                      onCancel: () => setState(_selected.clear),
-                      onSelectAll: () => setState(() {
-                        _selected
-                          ..clear()
-                          ..addAll(documents.map((d) => d.id));
-                      }),
-                      onDelete: () => _deleteSelected(documents),
-                    )
-                  : _Header(count: all?.length ?? 0),
+        child: Stack(
+          children: [
+            CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _TopBar(
+                    searchOpen: _searchOpen,
+                    gridView: _gridView,
+                    onSearch: () => setState(() {
+                      _searchOpen = !_searchOpen;
+                      if (!_searchOpen) _query = '';
+                    }),
+                    onToggleLayout: () =>
+                        setState(() => _gridView = !_gridView),
+                    onAdd: _add,
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: _TitleBlock(count: all?.length ?? 0),
+                ),
+                if (_searchOpen)
+                  SliverToBoxAdapter(child: _searchField()),
+                SliverToBoxAdapter(
+                  child: _CategoryChips(
+                    selected: _category,
+                    onSelected: (name) => setState(() => _category = name),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: _SortFilterRow(
+                    sort: _sort,
+                    filterActive: _hasExtraFilters,
+                    onSort: (value) => setState(() => _sort = value),
+                    onFilter: _openFilters,
+                  ),
+                ),
+                if (loading)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (documents.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _query.isEmpty && _category == 'All' && !_hasExtraFilters
+                        ? const _EmptyLibrary()
+                        : const _NoResults(),
+                  )
+                else if (_gridView)
+                  _grid(documents)
+                else
+                  _list(documents),
+              ],
             ),
-            if ((all ?? const []).isNotEmpty) ...[
-              SliverToBoxAdapter(child: _searchField()),
-              SliverToBoxAdapter(child: _toolBar(documents.length)),
-            ],
-            if (loading)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (documents.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _query.isEmpty
-                    ? const _EmptyLibrary()
-                    : const _NoResults(),
-              )
-            else if (_gridView)
-              _grid(documents)
-            else
-              _list(documents),
+            if (_busy)
+              const Positioned.fill(
+                child: ColoredBox(
+                  color: Color(0x66000000),
+                  child: Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  // -------------------------------------------------------------------------
+  bool get _hasExtraFilters =>
+      _typeFilter != null ||
+      _dateFilter != _DateFilter.any ||
+      _favoritesOnly;
 
   List<Document> _filtered(List<Document> documents) {
-    if (_query.isEmpty) return documents;
-    final needle = _query.toLowerCase();
+    final needle = _query.trim().toLowerCase();
+    final now = DateTime.now();
     return [
       for (final doc in documents)
-        if (doc.title.toLowerCase().contains(needle)) doc,
+        if (_passes(doc, needle, now)) doc,
     ];
+  }
+
+  bool _passes(Document doc, String needle, DateTime now) {
+    final folder = _folderName(doc);
+    if (_category != 'All' && folder != _category) return false;
+    if (_typeFilter != null && doc.typeLabel != _typeFilter) return false;
+    if (_favoritesOnly && !doc.favorited) return false;
+    if (!_inDateRange(doc.createdAt, now)) return false;
+    if (needle.isEmpty) return true;
+    final haystack = [
+      doc.title,
+      doc.fileName,
+      doc.typeLabel,
+      doc.documentType,
+      folder,
+      doc.formattedSize,
+      DateFormat.yMMMd().format(doc.createdAt),
+    ].join(' ').toLowerCase();
+    return haystack.contains(needle);
+  }
+
+  bool _inDateRange(DateTime created, DateTime now) {
+    final start = DateTime(now.year, now.month, now.day);
+    switch (_dateFilter) {
+      case _DateFilter.any:
+        return true;
+      case _DateFilter.today:
+        return !created.isBefore(start);
+      case _DateFilter.week:
+        return !created.isBefore(start.subtract(const Duration(days: 7)));
+      case _DateFilter.month:
+        return !created.isBefore(start.subtract(const Duration(days: 30)));
+    }
   }
 
   List<Document> _sorted(List<Document> documents) {
@@ -108,20 +194,35 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       case DocumentSort.oldest:
         list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-      case DocumentSort.name:
+      case DocumentSort.nameAz:
         list.sort(
           (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
         );
-      case DocumentSort.pages:
-        list.sort((a, b) => b.pageCount.compareTo(a.pageCount));
+      case DocumentSort.nameZa:
+        list.sort(
+          (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()),
+        );
+      case DocumentSort.size:
+        list.sort(
+          (a, b) => (b.fileSizeBytes ?? 0).compareTo(a.fileSizeBytes ?? 0),
+        );
     }
     return list;
   }
 
+  String _folderName(Document document) {
+    final id = document.folderId;
+    for (final folder in _folders) {
+      if (folder.id == id) return folder.name;
+    }
+    return 'Invoices';
+  }
+
   Widget _searchField() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: TextField(
+        autofocus: true,
         onChanged: (value) => setState(() => _query = value),
         textInputAction: TextInputAction.search,
         style: BrandType.body,
@@ -135,7 +236,7 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
           ),
           isDense: true,
           filled: true,
-          fillColor: Brand.surface,
+          fillColor: Brand.canvas,
           contentPadding: const EdgeInsets.symmetric(vertical: 14),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
@@ -145,57 +246,7 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
             borderRadius: BorderRadius.circular(16),
             borderSide: const BorderSide(color: Brand.blue, width: 1.6),
           ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Brand.outline),
-          ),
         ),
-      ),
-    );
-  }
-
-  Widget _toolBar(int shown) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 12, 10),
-      child: Row(
-        children: [
-          Text(
-            '$shown document${shown == 1 ? '' : 's'}',
-            style: BrandType.caption,
-          ),
-          const Spacer(),
-          PopupMenuButton<DocumentSort>(
-            initialValue: _sort,
-            tooltip: 'Sort',
-            onSelected: (value) => setState(() => _sort = value),
-            itemBuilder: (context) => [
-              for (final option in DocumentSort.values)
-                PopupMenuItem(value: option, child: Text(option.label)),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.swap_vert_rounded,
-                    size: 19,
-                    color: Brand.grey,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(_sort.label, style: BrandType.caption),
-                ],
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: _gridView ? 'Show as list' : 'Show as grid',
-            icon: Icon(
-              _gridView ? Icons.view_list_rounded : Icons.grid_view_rounded,
-              size: 21,
-            ),
-            onPressed: () => setState(() => _gridView = !_gridView),
-          ),
-        ],
       ),
     );
   }
@@ -212,15 +263,13 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
         ),
         delegate: SliverChildBuilderDelegate(
           childCount: documents.length,
-          (context, index) => _DocumentTile(
+          (context, index) => _DocumentGridCard(
             document: documents[index],
-            index: index,
-            selected: _selected.contains(documents[index].id),
-            selecting: _selecting,
-            highlighted:
-                widget.highlightDocumentId == documents[index].id,
+            folderName: _folderName(documents[index]),
+            highlighted: widget.highlightDocumentId == documents[index].id,
             onTap: () => _open(documents[index]),
-            onToggle: () => _toggle(documents[index]),
+            onMore: () => _more(documents[index]),
+            onFavorite: () => _toggleFavorite(documents[index]),
           ),
         ),
       ),
@@ -232,241 +281,510 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
       padding: const EdgeInsets.fromLTRB(20, 2, 20, 140),
       sliver: SliverList.separated(
         itemCount: documents.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) => _DocumentRow(
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) => _DocumentListCard(
           document: documents[index],
-          index: index,
-          selected: _selected.contains(documents[index].id),
-          selecting: _selecting,
+          folderName: _folderName(documents[index]),
           highlighted: widget.highlightDocumentId == documents[index].id,
           onTap: () => _open(documents[index]),
-          onToggle: () => _toggle(documents[index]),
+          onMore: () => _more(documents[index]),
+          onFavorite: () => _toggleFavorite(documents[index]),
         ),
       ),
     );
   }
 
   void _open(Document document) {
-    if (_selecting) {
-      _toggle(document);
-      return;
-    }
     context.push('/library/document/${document.id}');
   }
 
-  void _toggle(Document document) {
+  Future<void> _add() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Brand.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.document_scanner_outlined),
+                  title: const Text('Scan Document'),
+                  onTap: () => Navigator.pop(ctx, 'scan'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_outlined),
+                  title: const Text('Import from Gallery'),
+                  onTap: () => Navigator.pop(ctx, 'gallery'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.folder_open_outlined),
+                  title: const Text('Import from Files'),
+                  onTap: () => Navigator.pop(ctx, 'files'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'scan':
+        context.push('/camera');
+      case 'gallery':
+        await importGalleryAsDocument(context, ref, title: 'Photo scan');
+      case 'files':
+        await importFilesAsDocument(context, ref);
+    }
+  }
+
+  Future<void> _openFilters() async {
+    var type = _typeFilter;
+    var date = _dateFilter;
+    var favorites = _favoritesOnly;
+    var category = _category;
+    final applied = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Brand.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Filter', style: BrandType.title),
+                    const SizedBox(height: 12),
+                    const Text('File type', style: BrandType.caption),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Any'),
+                          selected: type == null,
+                          onSelected: (_) => setSheet(() => type = null),
+                        ),
+                        ChoiceChip(
+                          label: const Text('PDF'),
+                          selected: type == 'PDF',
+                          onSelected: (_) => setSheet(() => type = 'PDF'),
+                        ),
+                        ChoiceChip(
+                          label: const Text('JPG'),
+                          selected: type == 'JPG',
+                          onSelected: (_) => setSheet(() => type = 'JPG'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Category', style: BrandType.caption),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final name in DocumentFolder.chipNames)
+                          ChoiceChip(
+                            label: Text(name),
+                            selected: category == name,
+                            onSelected: (_) => setSheet(() => category = name),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Date', style: BrandType.caption),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('Any'),
+                          selected: date == _DateFilter.any,
+                          onSelected: (_) =>
+                              setSheet(() => date = _DateFilter.any),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Today'),
+                          selected: date == _DateFilter.today,
+                          onSelected: (_) =>
+                              setSheet(() => date = _DateFilter.today),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Last 7 days'),
+                          selected: date == _DateFilter.week,
+                          onSelected: (_) =>
+                              setSheet(() => date = _DateFilter.week),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Last 30 days'),
+                          selected: date == _DateFilter.month,
+                          onSelected: (_) =>
+                              setSheet(() => date = _DateFilter.month),
+                        ),
+                      ],
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Favorites only'),
+                      value: favorites,
+                      onChanged: (v) => setSheet(() => favorites = v),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Apply'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (applied != true || !mounted) return;
     setState(() {
-      if (!_selected.remove(document.id)) _selected.add(document.id);
+      _typeFilter = type;
+      _dateFilter = date;
+      _favoritesOnly = favorites;
+      _category = category;
     });
   }
 
-  Future<void> _deleteSelected(List<Document> documents) async {
-    final count = _selected.length;
-    final confirmed = await showDialog<bool>(
+  Future<void> _toggleFavorite(Document document) async {
+    final store = _store;
+    if (store == null) return;
+    await store.setFavorited(document.id, !document.favorited);
+    bumpLibrary(ref);
+  }
+
+  Future<void> _more(Document document) async {
+    final action = await showModalBottomSheet<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete $count document${count == 1 ? '' : 's'}?'),
-        content: const Text('This cannot be undone.'),
+      backgroundColor: Brand.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.drive_file_rename_outline),
+                  title: const Text('Rename'),
+                  onTap: () => Navigator.pop(ctx, 'rename'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.drive_file_move_outline),
+                  title: const Text('Move'),
+                  onTap: () => Navigator.pop(ctx, 'move'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.copy_outlined),
+                  title: const Text('Duplicate'),
+                  onTap: () => Navigator.pop(ctx, 'duplicate'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.ios_share_rounded),
+                  title: const Text('Share'),
+                  onTap: () => Navigator.pop(ctx, 'share'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.download_rounded),
+                  title: const Text('Save to Files'),
+                  onTap: () => Navigator.pop(ctx, 'files'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_outlined),
+                  title: const Text('Save to Gallery'),
+                  onTap: () => Navigator.pop(ctx, 'gallery'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Brand.pdfRed),
+                  title: const Text(
+                    'Delete',
+                    style: TextStyle(color: Brand.pdfRed),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'delete'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'rename':
+        await _rename(document);
+      case 'move':
+        await _move(document);
+      case 'duplicate':
+        await _duplicate(document);
+      case 'share':
+        await _run(() => _exporter.sharePdf(document));
+      case 'files':
+        await _run(() async {
+          final saved = await _exporter.savePdfToFiles(document);
+          if (saved && mounted) _toast('PDF saved to Files');
+        });
+      case 'gallery':
+        await _run(() async {
+          final saved = await _exporter.saveToPhotos(document);
+          if (mounted) {
+            _toast('Saved $saved page${saved == 1 ? '' : 's'} to Gallery');
+          }
+        });
+      case 'delete':
+        await _delete(document);
+    }
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() => _busy = true);
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) _toast('$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _rename(Document document) async {
+    final controller = TextEditingController(text: document.title);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+    await ref.read(documentRepositoryProvider).renameDocument(
+      document.id,
+      trimmed,
+    );
+    bumpLibrary(ref);
+  }
+
+  Future<void> _move(Document document) async {
+    final folders = _folders;
+    final chosen = await showModalBottomSheet<DocumentFolder>(
+      context: context,
+      backgroundColor: Brand.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Text('Move to folder', style: BrandType.title),
+                ),
+                for (final folder in folders)
+                  ListTile(
+                    leading: const Icon(Icons.folder_outlined, color: Brand.blue),
+                    title: Text(folder.name),
+                    onTap: () => Navigator.pop(ctx, folder),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    final store = _store;
+    if (chosen == null || store == null || !mounted) return;
+    await store.setDocumentFolder(document.id, chosen.id);
+    bumpLibrary(ref);
+  }
+
+  Future<void> _duplicate(Document document) async {
+    final store = _store;
+    if (store == null) return;
+    setState(() => _busy = true);
+    try {
+      final copy = await store.duplicateDocument(document.id);
+      bumpLibrary(ref);
+      if (mounted && copy != null) _toast('Duplicated as ${copy.title}');
+    } catch (e) {
+      if (mounted) _toast('$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _delete(Document document) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this document?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
-
-    final repository = ref.read(documentRepositoryProvider);
-    for (final id in _selected.toList()) {
-      await repository.deleteDocument(id);
-    }
-    setState(_selected.clear);
+    await ref.read(documentRepositoryProvider).deleteDocument(document.id);
     bumpLibrary(ref);
+  }
+
+  void _toast(String message) {
+    if (!mounted || message.isEmpty) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
-// ---------------------------------------------------------------------------
+class _TopBar extends StatelessWidget {
+  const _TopBar({
+    required this.searchOpen,
+    required this.gridView,
+    required this.onSearch,
+    required this.onToggleLayout,
+    required this.onAdd,
+  });
 
-class _Header extends StatelessWidget {
-  const _Header({required this.count});
+  final bool searchOpen;
+  final bool gridView;
+  final VoidCallback onSearch;
+  final VoidCallback onToggleLayout;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 16, 4),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ScanellaWordmark(fontSize: 22, color: Brand.blue),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Search',
+            onPressed: onSearch,
+            icon: Icon(
+              searchOpen ? Icons.close_rounded : Icons.search_rounded,
+              color: Brand.ink,
+            ),
+          ),
+          Tooltip(
+            message: gridView ? 'Show as list' : 'Show as grid',
+            child: Material(
+              color: Brand.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: const BorderSide(color: Brand.outline),
+              ),
+              child: InkWell(
+                onTap: onToggleLayout,
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(
+                    gridView
+                        ? Icons.view_list_rounded
+                        : Icons.grid_view_rounded,
+                    color: Brand.ink,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Material(
+            color: Brand.blue,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onAdd,
+              child: const Tooltip(
+                message: 'Add',
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(Icons.add_rounded, color: Colors.white, size: 24),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TitleBlock extends StatelessWidget {
+  const _TitleBlock({required this.count});
 
   final int count;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 12, 14),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Documents', style: BrandType.headline),
-                const SizedBox(height: 3),
-                Text(
-                  count == 0
-                      ? 'Everything you scan lives here'
-                      : '$count saved on this device',
-                  style: BrandType.caption,
-                ),
-              ],
-            ),
-          ),
-          IconButton.filledTonal(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined, size: 21),
-            onPressed: () => context.push('/settings'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SelectionBar extends StatelessWidget {
-  const _SelectionBar({
-    required this.count,
-    required this.onCancel,
-    required this.onSelectAll,
-    required this.onDelete,
-  });
-
-  final int count;
-  final VoidCallback onCancel;
-  final VoidCallback onSelectAll;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.close_rounded),
-            onPressed: onCancel,
-            color: theme.colorScheme.onPrimaryContainer,
-          ),
-          Text(
-            '$count selected',
-            style: BrandType.title,
-          ),
-          const Spacer(),
-          TextButton(onPressed: onSelectAll, child: const Text('All')),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded),
-            tooltip: 'Delete',
-            onPressed: onDelete,
-            color: theme.colorScheme.error,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DocumentTile extends StatelessWidget {
-  const _DocumentTile({
-    required this.document,
-    required this.index,
-    required this.selected,
-    required this.selecting,
-    required this.highlighted,
-    required this.onTap,
-    required this.onToggle,
-  });
-
-  final Document document;
-  final int index;
-  final bool selected;
-  final bool selecting;
-  final bool highlighted;
-  final VoidCallback onTap;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      key: highlighted ? ValueKey('highlight-${document.id}') : null,
-      onTap: onTap,
-      onLongPress: onToggle,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: (selected || highlighted) ? Brand.blue : Brand.outline,
-                  width: (selected || highlighted) ? 2.5 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.07),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(15),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    PageThumbnail(
-                      path: document.pages.isEmpty
-                          ? null
-                          : document.pages.first.path,
-                      cacheWidth: 420,
-                      seed: document.id + index,
-                    ),
-                    if (document.pageCount > 1)
-                      Positioned(
-                        right: 8,
-                        bottom: 8,
-                        child: _PageBadge(count: document.pageCount),
-                      ),
-                    if (selecting)
-                      Positioned(
-                        left: 8,
-                        top: 8,
-                        child: _SelectionDot(selected: selected),
-                      )
-                    else if (highlighted)
-                      const Positioned(
-                        left: 8,
-                        top: 8,
-                        child: _NewBadge(),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
+          const Text('My Documents', style: BrandType.display),
+          const SizedBox(height: 4),
           Text(
-            document.title,
-            style: BrandType.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            DateFormat.MMMd().format(document.createdAt),
+            '$count Document${count == 1 ? '' : 's'}',
             style: BrandType.caption,
           ),
         ],
@@ -475,87 +793,441 @@ class _DocumentTile extends StatelessWidget {
   }
 }
 
-class _DocumentRow extends StatelessWidget {
-  const _DocumentRow({
-    required this.document,
-    required this.index,
-    required this.selected,
-    required this.selecting,
-    required this.highlighted,
-    required this.onTap,
-    required this.onToggle,
-  });
+class _CategoryChips extends StatelessWidget {
+  const _CategoryChips({required this.selected, required this.onSelected});
 
-  final Document document;
-  final int index;
-  final bool selected;
-  final bool selecting;
-  final bool highlighted;
-  final VoidCallback onTap;
-  final VoidCallback onToggle;
+  final String selected;
+  final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      key: highlighted ? ValueKey('highlight-${document.id}') : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(
-          color: (selected || highlighted) ? Brand.blue : Brand.outline,
-          width: (selected || highlighted) ? 2 : 1,
-        ),
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        cacheExtent: 800,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          for (final name in DocumentFolder.chipNames)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _Chip(
+                name: name,
+                selected: selected == name,
+                onTap: () => onSelected(name),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({
+    required this.name,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String name;
+  final bool selected;
+  final VoidCallback onTap;
+
+  IconData get _icon => switch (name) {
+    'All' => Icons.folder_rounded,
+    'Invoices' => Icons.description_outlined,
+    'Receipts' => Icons.receipt_long_outlined,
+    'Notes' => Icons.edit_note_rounded,
+    'ID Cards' => Icons.badge_outlined,
+    _ => Icons.folder_outlined,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? Brand.blue : Brand.surface,
+      shape: StadiumBorder(
+        side: BorderSide(color: selected ? Brand.blue : Brand.outline),
       ),
       child: InkWell(
         onTap: onTap,
-        onLongPress: onToggle,
+        customBorder: const StadiumBorder(),
         child: Padding(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Row(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 54,
-                  height: 70,
-                  child: PageThumbnail(
-                    path: document.pages.isEmpty
-                        ? null
-                        : document.pages.first.path,
-                    cacheWidth: 162,
-                    seed: document.id + index,
-                  ),
+              Icon(
+                _icon,
+                size: 16,
+                color: selected ? Colors.white : Brand.grey,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                name,
+                style: TextStyle(
+                  color: selected ? Colors.white : Brand.ink,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
                 ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      document.title,
-                      style: BrandType.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SortFilterRow extends StatelessWidget {
+  const _SortFilterRow({
+    required this.sort,
+    required this.filterActive,
+    required this.onSort,
+    required this.onFilter,
+  });
+
+  final DocumentSort sort;
+  final bool filterActive;
+  final ValueChanged<DocumentSort> onSort;
+  final VoidCallback onFilter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+      child: Row(
+        children: [
+          PopupMenuButton<DocumentSort>(
+            tooltip: 'Sort',
+            initialValue: sort,
+            onSelected: onSort,
+            itemBuilder: (context) => [
+              for (final option in DocumentSort.values)
+                PopupMenuItem(value: option, child: Text(option.label)),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Row(
+                children: [
+                  Text(
+                    'Sort by: ${sort.label}',
+                    style: BrandType.caption.copyWith(
+                      color: Brand.ink,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${document.pageCount} page'
-                      '${document.pageCount == 1 ? '' : 's'} · '
-                      '${DateFormat.yMMMd().format(document.createdAt)}',
-                      style: BrandType.caption,
+                  ),
+                  const Icon(Icons.expand_more_rounded, size: 18, color: Brand.grey),
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: onFilter,
+            icon: Icon(
+              Icons.filter_list_rounded,
+              size: 18,
+              color: filterActive ? Brand.blue : Brand.grey,
+            ),
+            label: Text(
+              'Filter',
+              style: BrandType.caption.copyWith(
+                color: filterActive ? Brand.blue : Brand.grey,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DocumentListCard extends StatelessWidget {
+  const _DocumentListCard({
+    required this.document,
+    required this.folderName,
+    required this.highlighted,
+    required this.onTap,
+    required this.onMore,
+    required this.onFavorite,
+  });
+
+  final Document document;
+  final String folderName;
+  final bool highlighted;
+  final VoidCallback onTap;
+  final VoidCallback onMore;
+  final VoidCallback onFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = document.pageCount;
+    final meta =
+        '${DateFormat.yMMMd().format(document.createdAt)}  •  '
+        '$pages Page${pages == 1 ? '' : 's'}  •  ${document.formattedSize}';
+
+    return Material(
+      color: Brand.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: highlighted ? Brand.blue : Brand.outline,
+              width: highlighted ? 2 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Brand.ink.withValues(alpha: 0.05),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Thumb(document: document, highlighted: highlighted),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        document.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: BrandType.title,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: BrandType.caption,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.folder_outlined,
+                            size: 14,
+                            color: Brand.grey,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              folderName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: BrandType.caption,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  children: [
+                    IconButton(
+                      tooltip: 'More',
+                      onPressed: onMore,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.more_horiz_rounded, color: Brand.ink),
+                    ),
+                    IconButton(
+                      tooltip: document.favorited
+                          ? 'Remove from favorites'
+                          : 'Favorite',
+                      onPressed: onFavorite,
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        document.favorited
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: document.favorited
+                            ? const Color(0xFFF5B301)
+                            : Brand.grey,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              if (selecting)
-                _SelectionDot(selected: selected)
-              else
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Brand.greyLight,
-                ),
-            ],
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DocumentGridCard extends StatelessWidget {
+  const _DocumentGridCard({
+    required this.document,
+    required this.folderName,
+    required this.highlighted,
+    required this.onTap,
+    required this.onMore,
+    required this.onFavorite,
+  });
+
+  final Document document;
+  final String folderName;
+  final bool highlighted;
+  final VoidCallback onTap;
+  final VoidCallback onMore;
+  final VoidCallback onFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: highlighted ? Brand.blue : Brand.outline,
+                        width: highlighted ? 2.5 : 1,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(15),
+                      child: _Thumb(
+                        document: document,
+                        highlighted: highlighted,
+                        fill: true,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: IconButton(
+                    tooltip: 'More',
+                    onPressed: onMore,
+                    icon: const Icon(Icons.more_horiz_rounded, color: Brand.ink),
+                  ),
+                ),
+                Positioned(
+                  right: 4,
+                  bottom: 4,
+                  child: IconButton(
+                    tooltip: 'Favorite',
+                    onPressed: onFavorite,
+                    icon: Icon(
+                      document.favorited
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      color: document.favorited
+                          ? const Color(0xFFF5B301)
+                          : Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            document.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: BrandType.title,
+          ),
+          Text(
+            '${DateFormat.yMMMd().format(document.createdAt)}  •  '
+            '${document.pageCount} Page${document.pageCount == 1 ? '' : 's'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: BrandType.caption,
+          ),
+          Text(
+            '${document.formattedSize}  •  $folderName',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: BrandType.caption,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Thumb extends StatelessWidget {
+  const _Thumb({
+    required this.document,
+    required this.highlighted,
+    this.fill = false,
+  });
+
+  final Document document;
+  final bool highlighted;
+  final bool fill;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Stack(
+      fit: StackFit.expand,
+      children: [
+        PageThumbnail(
+          path: document.thumbnailPath,
+          cacheWidth: fill ? 420 : 216,
+          seed: document.id,
+          fit: BoxFit.cover,
+        ),
+        Positioned(
+          left: 6,
+          bottom: 6,
+          child: _TypeTag(label: document.typeLabel),
+        ),
+        if (highlighted)
+          const Positioned(left: 6, top: 6, child: _NewBadge()),
+      ],
+    );
+    if (fill) return child;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(width: 72, height: 92, child: child),
+    );
+  }
+}
+
+class _TypeTag extends StatelessWidget {
+  const _TypeTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final pdf = label == 'PDF';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: pdf ? Brand.pdfRed : Brand.docBlue,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
@@ -585,143 +1257,28 @@ class _NewBadge extends StatelessWidget {
   }
 }
 
-class _PageBadge extends StatelessWidget {
-  const _PageBadge({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.66),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.copy_rounded, size: 11, color: Colors.white),
-          const SizedBox(width: 4),
-          Text(
-            '$count',
-            style: BrandType.caption.copyWith(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SelectionDot extends StatelessWidget {
-  const _SelectionDot({required this.selected});
-
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 24,
-      height: 24,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: selected ? scheme.primary : Colors.white.withValues(alpha: 0.85),
-        border: Border.all(
-          color: selected ? scheme.primary : scheme.outline,
-          width: 1.5,
-        ),
-      ),
-      child: selected
-          ? Icon(Icons.check_rounded, size: 16, color: scheme.onPrimary)
-          : null,
-    );
-  }
-}
-
 class _EmptyLibrary extends StatelessWidget {
   const _EmptyLibrary();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(40, 0, 40, 120),
+        padding: EdgeInsets.fromLTRB(40, 0, 40, 120),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: 118,
-              height: 150,
-              child: Stack(
-                children: [
-                  // Two tilted sheets behind the front page, so the empty
-                  // state reads as "a stack of documents" at a glance.
-                  Transform.rotate(
-                    angle: -0.16,
-                    child: _GhostSheet(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                    ),
-                  ),
-                  Transform.rotate(
-                    angle: 0.10,
-                    child: _GhostSheet(
-                      color: theme.colorScheme.surfaceContainerHigh,
-                    ),
-                  ),
-                  Center(
-                    child: Container(
-                      width: 84,
-                      height: 108,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.document_scanner_outlined,
-                        size: 38,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 30),
-            const Text('Nothing scanned yet', style: BrandType.title),
-            const SizedBox(height: 10),
-            const Text(
-              'Tap the scan button below. Your device finds the page edges '
-              'and Scan2 straightens and cleans it up.',
+            Icon(Icons.folder_open_outlined, size: 48, color: Brand.greyLight),
+            SizedBox(height: 16),
+            Text('Nothing scanned yet', style: BrandType.title),
+            SizedBox(height: 8),
+            Text(
+              'Tap + to scan a document or import from Gallery or Files. '
+              'Everything stays on this device.',
               textAlign: TextAlign.center,
               style: BrandType.subtitle,
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GhostSheet extends StatelessWidget {
-  const _GhostSheet({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 84,
-        height: 108,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12),
         ),
       ),
     );
@@ -739,16 +1296,9 @@ class _NoResults extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.search_off_rounded,
-              size: 42,
-              color: Brand.greyLight,
-            ),
+            Icon(Icons.search_off_rounded, size: 42, color: Brand.greyLight),
             SizedBox(height: 12),
-            Text(
-              'No documents match that search',
-              style: BrandType.subtitle,
-            ),
+            Text('No documents match', style: BrandType.subtitle),
           ],
         ),
       ),
