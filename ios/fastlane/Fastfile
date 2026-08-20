@@ -81,13 +81,23 @@ rescue StandardError => e
   UI.important("Could not disable TestFlight screenshot feedback: #{e.class}: #{e.message}")
 end
 
-# Internal testers see a build automatically. Named groups (ours is "Rakesh")
-# do not, unless the build is added to that group — testers then keep seeing
-# an older build in the TestFlight app.
+# Internal groups (ours is "Rakesh") already receive every processed build.
+# Apple rejects assigning a build to an internal group. Only add external
+# groups, and only if one exists.
 def add_build_to_all_beta_groups!
   app = Spaceship::ConnectAPI::App.find(APP_ID)
   unless app
     UI.important("App #{APP_ID} not found; cannot add the build to tester groups")
+    return
+  end
+
+  groups = app.get_beta_groups
+  external = groups.reject { |group| group.is_internal_group }
+  if external.empty?
+    UI.message(
+      "All TestFlight groups are internal (#{groups.map(&:name).join(', ')}). " \
+      "Apple already gave this build to those testers — do not assign it again."
+    )
     return
   end
 
@@ -100,13 +110,7 @@ def add_build_to_all_beta_groups!
     return
   end
 
-  groups = app.get_beta_groups
-  if groups.empty?
-    UI.important("No TestFlight groups found for #{APP_ID}")
-    return
-  end
-
-  groups.each do |group|
+  external.each do |group|
     UI.message("Adding build #{build.version} to TestFlight group '#{group.name}'")
     begin
       build.add_beta_groups(beta_groups: [group])
@@ -353,7 +357,11 @@ platform :ios do
           ipa: dest_ipa,
           skip_waiting_for_build_processing: false,
           distribute_external: false,
-          notify_external_testers: false
+          notify_external_testers: false,
+          # Answers Apple's export-compliance question so the build is
+          # actually installable in the TestFlight app, not only visible
+          # in App Store Connect.
+          uses_non_exempt_encryption: false
         )
         add_build_to_all_beta_groups!
         UI.success(
