@@ -58,6 +58,21 @@ class DocumentStorage {
     await file.writeAsBytes(bytes, flush: true);
   }
 
+  /// Writes the generated PDF beside the page images.
+  Future<String> writePdf({
+    required String documentId,
+    required List<int> bytes,
+  }) async {
+    final root = await documentsRoot();
+    final docDir = Directory(p.join(root.path, documentId));
+    if (!await docDir.exists()) {
+      await docDir.create(recursive: true);
+    }
+    final destination = p.join(docDir.path, 'document.pdf');
+    await File(destination).writeAsBytes(bytes, flush: true);
+    return destination;
+  }
+
   Future<void> deleteDocumentFiles(String documentId) async {
     final root = await documentsRoot();
     final docDir = Directory(p.join(root.path, documentId));

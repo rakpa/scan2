@@ -14,6 +14,8 @@ class ScanAdjustments {
     this.filter = ScanFilter.magic,
     this.brightness = 0,
     this.contrast = 0,
+    this.sharpness = 0,
+    this.saturation = 0,
   });
 
   final ScanFilter filter;
@@ -24,7 +26,17 @@ class ScanAdjustments {
   /// -1..1, neutral at 0.
   final double contrast;
 
-  bool get isNeutralTone => brightness.abs() < 0.001 && contrast.abs() < 0.001;
+  /// -1..1, neutral at 0. Positive sharpens; negative softens.
+  final double sharpness;
+
+  /// -1..1, neutral at 0. Negative desaturates; positive boosts colour.
+  final double saturation;
+
+  bool get isNeutralTone =>
+      brightness.abs() < 0.001 &&
+      contrast.abs() < 0.001 &&
+      sharpness.abs() < 0.001 &&
+      saturation.abs() < 0.001;
 
   bool get isNoOp => filter == ScanFilter.original && isNeutralTone;
 
@@ -32,11 +44,15 @@ class ScanAdjustments {
     ScanFilter? filter,
     double? brightness,
     double? contrast,
+    double? sharpness,
+    double? saturation,
   }) {
     return ScanAdjustments(
       filter: filter ?? this.filter,
       brightness: brightness ?? this.brightness,
       contrast: contrast ?? this.contrast,
+      sharpness: sharpness ?? this.sharpness,
+      saturation: saturation ?? this.saturation,
     );
   }
 
@@ -45,10 +61,13 @@ class ScanAdjustments {
       other is ScanAdjustments &&
       other.filter == filter &&
       other.brightness == brightness &&
-      other.contrast == contrast;
+      other.contrast == contrast &&
+      other.sharpness == sharpness &&
+      other.saturation == saturation;
 
   @override
-  int get hashCode => Object.hash(filter, brightness, contrast);
+  int get hashCode =>
+      Object.hash(filter, brightness, contrast, sharpness, saturation);
 }
 
 class ImageProcessor {
@@ -62,6 +81,8 @@ class ImageProcessor {
     required ScanFilter filter,
     double brightness = 0,
     double contrast = 0,
+    double sharpness = 0,
+    double saturation = 0,
   }) async {
     final bytes = imageBytes is Uint8List
         ? imageBytes
@@ -70,6 +91,8 @@ class ImageProcessor {
       filter: filter,
       brightness: brightness,
       contrast: contrast,
+      sharpness: sharpness,
+      saturation: saturation,
     );
     if (adjustments.isNoOp) return bytes;
 
@@ -118,9 +141,14 @@ Uint8List _applyFilterIsolate(_FilterRequest request) {
 
 /// Applies tone then the selected filter, returning a new raster.
 Raster applyAdjustments(Raster src, ScanAdjustments adjustments) {
-  var out = adjustments.isNeutralTone
+  var out = (adjustments.brightness.abs() < 0.001 &&
+          adjustments.contrast.abs() < 0.001)
       ? src.clone()
       : _applyTone(src, adjustments.brightness, adjustments.contrast);
+
+  if (adjustments.saturation.abs() >= 0.001) {
+    out = _applySaturation(out, adjustments.saturation);
+  }
 
   switch (adjustments.filter) {
     case ScanFilter.original:
@@ -133,6 +161,53 @@ Raster applyAdjustments(Raster src, ScanAdjustments adjustments) {
       out = _autoEnhance(out);
     case ScanFilter.enhance:
       out = _sharpen(out, amount: 1.1);
+  }
+
+  if (adjustments.sharpness.abs() >= 0.001) {
+    if (adjustments.sharpness > 0) {
+      out = _sharpen(out, amount: adjustments.sharpness * 1.15);
+    } else {
+      out = _soften(out, amount: -adjustments.sharpness);
+    }
+  }
+  return out;
+}
+
+/// amount -1..1: 0 unchanged, -1 grayscale, +1 boosted colour.
+Raster _applySaturation(Raster src, double amount) {
+  final factor = 1.0 + amount;
+  final luma = src.toLuma();
+  final out = Raster(src.width, src.height);
+  var i = 0;
+  for (var p = 0; p < luma.length; p++) {
+    final y = luma[p];
+    out.pixels[i] = (y + (src.pixels[i] - y) * factor).round().clamp(0, 255);
+    out.pixels[i + 1] = (y + (src.pixels[i + 1] - y) * factor)
+        .round()
+        .clamp(0, 255);
+    out.pixels[i + 2] = (y + (src.pixels[i + 2] - y) * factor)
+        .round()
+        .clamp(0, 255);
+    i += 3;
+  }
+  return out;
+}
+
+/// Blur mixed back in, used for negative sharpness.
+Raster _soften(Raster src, {required double amount}) {
+  final luma = src.toLuma();
+  final radius = _relativeRadius(src, 0.008, min: 1, max: 24);
+  final blurred = blurLuma(luma, src.width, src.height, radius);
+  final mix = (amount.clamp(0.0, 1.0) * 256).round();
+  final keep = 256 - mix;
+  final out = Raster(src.width, src.height);
+  var i = 0;
+  for (var p = 0; p < luma.length; p++) {
+    final b = blurred[p];
+    out.pixels[i] = ((src.pixels[i] * keep) + (b * mix)) >> 8;
+    out.pixels[i + 1] = ((src.pixels[i + 1] * keep) + (b * mix)) >> 8;
+    out.pixels[i + 2] = ((src.pixels[i + 2] * keep) + (b * mix)) >> 8;
+    i += 3;
   }
   return out;
 }

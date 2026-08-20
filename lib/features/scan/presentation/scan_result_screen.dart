@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +12,7 @@ import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/crop/domain/page_processor.dart';
 import 'package:scan2/features/crop/domain/scan_preview.dart';
 import 'package:scan2/features/library/data/document_store.dart';
+import 'package:scan2/features/library/domain/export_service.dart';
 import 'package:scan2/features/scan/domain/scan_result_args.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
 
@@ -87,6 +87,7 @@ class ScanResultScreen extends ConsumerStatefulWidget {
 
 class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
   static const _processor = PageProcessor();
+  static const _exporter = ExportService();
 
   late final List<_PageEdit> _pages;
   int _index = 0;
@@ -159,9 +160,12 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
     final page = _current;
     var brightness = page.adjustments.brightness;
     var contrast = page.adjustments.contrast;
+    var sharpness = page.adjustments.sharpness;
+    var saturation = page.adjustments.saturation;
     final applied = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Brand.surface,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -169,7 +173,12 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
         return StatefulBuilder(
           builder: (ctx, setSheet) {
             return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                12,
+                20,
+                20 + MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -194,6 +203,16 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
                     value: contrast,
                     onChanged: (v) => setSheet(() => contrast = v),
                   ),
+                  _AdjustSlider(
+                    label: 'Sharpness',
+                    value: sharpness,
+                    onChanged: (v) => setSheet(() => sharpness = v),
+                  ),
+                  _AdjustSlider(
+                    label: 'Saturation',
+                    value: saturation,
+                    onChanged: (v) => setSheet(() => saturation = v),
+                  ),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -213,6 +232,8 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
     page.adjustments = page.adjustments.copyWith(
       brightness: brightness,
       contrast: contrast,
+      sharpness: sharpness,
+      saturation: saturation,
     );
     page.invalidateThumbs();
     setState(() {});
@@ -240,7 +261,30 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
     }
   }
 
-  void _retake() => context.go('/camera');
+  Future<void> _retake() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Retake scan?'),
+          content: const Text(
+            'This capture will be discarded and you will return to the camera.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Retake'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed == true && mounted) context.go('/camera');
+  }
 
   void _back() => context.go('/library');
 
@@ -257,18 +301,29 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
       for (final page in _pages) {
         processed.add(await page.toProcessed(_processor));
       }
-      final doc = await repository.createProcessedDocument(pages: processed);
+      final title = await repository.nextScanTitle();
+      var doc = await repository.createProcessedDocument(
+        pages: processed,
+        title: title,
+      );
+      try {
+        final pdfBytes = await _exporter.buildPdfBytes(doc);
+        doc = await repository.attachPdf(documentId: doc.id, bytes: pdfBytes) ??
+            doc;
+      } catch (e) {
+        debugPrint('Local PDF generation failed, keeping image pages: $e');
+      }
       bumpLibrary(ref);
       HapticFeedback.mediumImpact();
       if (!mounted) return;
-      context.go('/library/document/${doc.id}');
+      context.go('/saved/${doc.id}');
     } catch (e) {
       debugPrint('Scan save failed: $e');
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save: $e')));
     }
   }
 
@@ -308,22 +363,24 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
                   ),
                 ),
               ),
-              if (count > 1) _PageDots(
-                count: count,
-                index: _index,
-                onChanged: (i) => setState(() => _index = i),
-              ),
-              KeyedSubtree(
-                key: _presetsKey,
-                child: _PresetStrip(page: page, onSelect: _selectPreset),
-              ),
-              _BottomActions(
+              if (count > 1)
+                _PageDots(
+                  count: count,
+                  index: _index,
+                  onChanged: (i) => setState(() => _index = i),
+                ),
+              _EditToolbar(
                 onCrop: _crop,
                 onRotate: _rotate,
                 onFilter: _revealFilters,
                 onAdjust: _adjust,
                 onRetake: _retake,
               ),
+              KeyedSubtree(
+                key: _presetsKey,
+                child: _PresetStrip(page: page, onSelect: _selectPreset),
+              ),
+              _SaveDocumentButton(saving: _saving, onSave: _save),
             ],
           ),
         ),
@@ -451,11 +508,11 @@ class _TopBar extends StatelessWidget {
               tooltip: 'Back',
               onPressed: onBack,
               icon: const Icon(Icons.chevron_left_rounded, size: 32),
-              color: Brand.ink,
+              color: Brand.blue,
             ),
             const Expanded(
               child: Center(
-                child: ScanellaWordmark(fontSize: 20),
+                child: ScanellaWordmark(fontSize: 22, color: Brand.blue),
               ),
             ),
             SizedBox(
@@ -501,64 +558,59 @@ class _StatusRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
       child: SizedBox(
-        height: 36,
+        height: 40,
         child: Row(
           children: [
-            const SizedBox(width: 40),
+            const SizedBox(width: 36),
             Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F8EE),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.check_rounded,
-                          size: 16,
-                          color: Color(0xFF1B8A4A),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
+                  decoration: BoxDecoration(
+                    color: Brand.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Brand.outline),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF22C55E),
+                          shape: BoxShape.circle,
                         ),
-                        SizedBox(width: 4),
-                        Text(
-                          'Auto-detect',
-                          style: TextStyle(
-                            color: Color(0xFF1B8A4A),
-                            fontWeight: FontWeight.w700,
+                        child: const Icon(
+                          Icons.check_rounded,
+                          size: 11,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Auto-detect • $pageLabel',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Brand.ink,
+                            fontWeight: FontWeight.w600,
                             fontSize: 13,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      '•  $pageLabel',
-                      overflow: TextOverflow.ellipsis,
-                      style: BrandType.caption.copyWith(
-                        color: Brand.ink,
-                        fontWeight: FontWeight.w600,
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
             IconButton(
               tooltip: 'Crop',
               onPressed: onCrop,
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.crop_rounded, color: Brand.ink, size: 22),
+              icon: const Icon(Icons.crop_rounded, color: Brand.blue, size: 22),
             ),
           ],
         ),
@@ -575,35 +627,47 @@ class _DocumentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Brand.surface,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Brand.ink.withValues(alpha: 0.10),
-                blurRadius: 28,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: RotatedBox(
-              quarterTurns: quarterTurns % 4,
-              child: Image.memory(
-                bytes,
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
-                filterQuality: FilterQuality.medium,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return InteractiveViewer(
+          minScale: 1,
+          maxScale: 5,
+          child: SizedBox(
+            width: constraints.maxWidth,
+            height: constraints.maxHeight,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Brand.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Brand.ink.withValues(alpha: 0.10),
+                        blurRadius: 28,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: RotatedBox(
+                      quarterTurns: quarterTurns % 4,
+                      child: Image.memory(
+                        bytes,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.medium,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -653,6 +717,111 @@ class _PageDots extends StatelessWidget {
             color: Brand.ink,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EditToolbar extends StatelessWidget {
+  const _EditToolbar({
+    required this.onCrop,
+    required this.onRotate,
+    required this.onFilter,
+    required this.onAdjust,
+    required this.onRetake,
+  });
+
+  final VoidCallback onCrop;
+  final VoidCallback onRotate;
+  final VoidCallback onFilter;
+  final VoidCallback onAdjust;
+  final VoidCallback onRetake;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Row(
+        children: [
+          _ToolButton(
+            icon: const Icon(Icons.crop_rounded),
+            label: 'Crop',
+            onTap: onCrop,
+          ),
+          _ToolButton(
+            icon: const Icon(Icons.rotate_right_rounded),
+            label: 'Rotate',
+            onTap: onRotate,
+          ),
+          _ToolButton(
+            icon: const _VennIcon(),
+            label: 'Filter',
+            onTap: onFilter,
+          ),
+          _ToolButton(
+            icon: const Icon(Icons.tune_rounded),
+            label: 'Adjust',
+            onTap: onAdjust,
+          ),
+          _ToolButton(
+            icon: const Icon(Icons.refresh_rounded),
+            label: 'Retake',
+            onTap: onRetake,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolButton extends StatelessWidget {
+  const _ToolButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final Widget icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Material(
+          color: Brand.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Brand.outline),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              height: 68,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconTheme(
+                    data: const IconThemeData(color: Brand.blue, size: 22),
+                    child: icon,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Brand.blue,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -709,64 +878,45 @@ class _PresetThumb extends StatelessWidget {
           child: Column(
             children: [
               Expanded(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: selected
-                              ? Brand.blue
-                              : Brand.ink.withValues(alpha: 0.12),
-                          width: selected ? 2.5 : 1,
-                        ),
-                      ),
-                      padding: const EdgeInsets.all(2),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(7),
-                        child: ColoredBox(
-                          color: const Color(0xFFF4F6FB),
-                          child: FutureBuilder<Uint8List>(
-                            future: page.thumbFor(preset),
-                            builder: (context, snap) {
-                              final bytes = snap.data ?? page.previewBytes;
-                              final desaturate =
-                                  snap.data == null &&
-                                  (preset == _EnhancePreset.bw ||
-                                      preset == _EnhancePreset.grayscale);
-                              return Image.memory(
-                                bytes,
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: double.infinity,
-                                gaplessPlayback: true,
-                                color: desaturate ? Colors.grey : null,
-                                colorBlendMode: desaturate
-                                    ? BlendMode.saturation
-                                    : null,
-                              );
-                            },
-                          ),
-                        ),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: selected
+                          ? Brand.blue
+                          : Brand.ink.withValues(alpha: 0.12),
+                      width: selected ? 3 : 1,
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(2),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: ColoredBox(
+                      color: const Color(0xFFF4F6FB),
+                      child: FutureBuilder<Uint8List>(
+                        future: page.thumbFor(preset),
+                        builder: (context, snap) {
+                          final bytes = snap.data ?? page.previewBytes;
+                          final desaturate =
+                              snap.data == null &&
+                              (preset == _EnhancePreset.bw ||
+                                  preset == _EnhancePreset.grayscale);
+                          return Image.memory(
+                            bytes,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: double.infinity,
+                            gaplessPlayback: true,
+                            color: desaturate ? Colors.grey : null,
+                            colorBlendMode: desaturate
+                                ? BlendMode.saturation
+                                : null,
+                          );
+                        },
                       ),
                     ),
-                    if (selected)
-                      const Positioned(
-                        right: -2,
-                        bottom: -2,
-                        child: CircleAvatar(
-                          radius: 9,
-                          backgroundColor: Brand.blue,
-                          child: Icon(
-                            Icons.check_rounded,
-                            size: 12,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(height: 6),
@@ -776,7 +926,7 @@ class _PresetThumb extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Brand.ink,
+                  color: selected ? Brand.blue : Brand.grey,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                   fontSize: 11,
                 ),
@@ -789,85 +939,40 @@ class _PresetThumb extends StatelessWidget {
   }
 }
 
-class _BottomActions extends StatelessWidget {
-  const _BottomActions({
-    required this.onCrop,
-    required this.onRotate,
-    required this.onFilter,
-    required this.onAdjust,
-    required this.onRetake,
-  });
+class _SaveDocumentButton extends StatelessWidget {
+  const _SaveDocumentButton({required this.saving, required this.onSave});
 
-  final VoidCallback onCrop;
-  final VoidCallback onRotate;
-  final VoidCallback onFilter;
-  final VoidCallback onAdjust;
-  final VoidCallback onRetake;
+  final bool saving;
+  final VoidCallback onSave;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
-      decoration: BoxDecoration(
-        color: Brand.surface,
-        border: Border(
-          top: BorderSide(color: Brand.ink.withValues(alpha: 0.06)),
-        ),
-      ),
-      child: Row(
-        children: [
-          _Action(icon: const Icon(Icons.crop_rounded), label: 'Crop', onTap: onCrop),
-          _Action(
-            icon: const Icon(Icons.rotate_right_rounded),
-            label: 'Rotate',
-            onTap: onRotate,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      child: SizedBox(
+        width: double.infinity,
+        height: 56,
+        child: FilledButton(
+          onPressed: saving ? null : onSave,
+          style: FilledButton.styleFrom(
+            backgroundColor: Brand.blue,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: Brand.blue.withValues(alpha: 0.45),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            textStyle: BrandType.button.copyWith(fontSize: 17),
           ),
-          _Action(icon: const _VennIcon(), label: 'Filter', onTap: onFilter),
-          _Action(icon: const Icon(Icons.tune_rounded), label: 'Adjust', onTap: onAdjust),
-          _Action(icon: const _DashedSquareIcon(), label: 'Retake', onTap: onRetake),
-        ],
-      ),
-    );
-  }
-}
-
-class _Action extends StatelessWidget {
-  const _Action({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final Widget icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconTheme(
-                data: const IconThemeData(color: Brand.ink, size: 24),
-                child: icon,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Brand.ink,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
+          child: saving
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Save Document'),
         ),
       ),
     );
@@ -879,7 +984,7 @@ class _VennIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = IconTheme.of(context).color ?? Brand.ink;
+    final color = IconTheme.of(context).color ?? Brand.blue;
     return SizedBox(
       width: 24,
       height: 24,
@@ -907,54 +1012,6 @@ class _VennPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _VennPainter oldDelegate) =>
-      oldDelegate.color != color;
-}
-
-class _DashedSquareIcon extends StatelessWidget {
-  const _DashedSquareIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    final color = IconTheme.of(context).color ?? Brand.ink;
-    return SizedBox(
-      width: 24,
-      height: 24,
-      child: CustomPaint(painter: _DashedSquarePainter(color)),
-    );
-  }
-}
-
-class _DashedSquarePainter extends CustomPainter {
-  _DashedSquarePainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..strokeCap = StrokeCap.round;
-    final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(3.5, 3.5, size.width - 7, size.height - 7),
-      const Radius.circular(3),
-    );
-    final path = Path()..addRRect(rect);
-    for (final metric in path.computeMetrics()) {
-      var d = 0.0;
-      const dash = 3.2;
-      const gap = 2.2;
-      while (d < metric.length) {
-        final end = math.min(d + dash, metric.length);
-        canvas.drawPath(metric.extractPath(d, end), paint);
-        d += dash + gap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedSquarePainter oldDelegate) =>
       oldDelegate.color != color;
 }
 

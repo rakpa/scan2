@@ -16,6 +16,7 @@ class PageThumbnail extends StatelessWidget {
     required this.path,
     this.cacheWidth,
     this.seed = 0,
+    this.fit = BoxFit.cover,
   });
 
   final String? path;
@@ -24,6 +25,8 @@ class PageThumbnail extends StatelessWidget {
   /// Varies the drawn stand-in so a grid of them does not look tiled.
   final int seed;
 
+  final BoxFit fit;
+
   @override
   Widget build(BuildContext context) {
     final file = path;
@@ -31,7 +34,7 @@ class PageThumbnail extends StatelessWidget {
 
     return Image.file(
       File(file),
-      fit: BoxFit.cover,
+      fit: fit,
       cacheWidth: cacheWidth,
       filterQuality: FilterQuality.medium,
       errorBuilder: (_, __, ___) => _PagePlaceholder(seed: seed),

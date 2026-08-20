@@ -76,6 +76,7 @@ class DocumentStore implements DocumentRepository {
       }
       if (pages.isEmpty) continue;
 
+      final pdfRelative = entry['pdfPath'];
       _documents.add(
         Document(
           id: id,
@@ -85,6 +86,9 @@ class DocumentStore implements DocumentRepository {
               DateTime.now(),
           pages: pages,
           edgesAlreadyApplied: entry['edgesAlreadyApplied'] as bool? ?? false,
+          pdfPath: pdfRelative is String ? p.join(root, pdfRelative) : null,
+          fileSizeBytes: (entry['fileSizeBytes'] as num?)?.toInt(),
+          documentType: entry['documentType'] as String? ?? 'Image',
         ),
       );
     }
@@ -146,6 +150,8 @@ class DocumentStore implements DocumentRepository {
           : ScanFilter.original,
       brightness: (raw['brightness'] as num?)?.toDouble() ?? 0,
       contrast: (raw['contrast'] as num?)?.toDouble() ?? 0,
+      sharpness: (raw['sharpness'] as num?)?.toDouble() ?? 0,
+      saturation: (raw['saturation'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -285,13 +291,75 @@ class DocumentStore implements DocumentRepository {
 
     final doc = Document(
       id: id,
-      title: title ?? defaultTitle(now),
+      title: title ?? scanFileTitle(now, _documents.map((d) => d.title)),
       createdAt: now,
       pages: stored,
+      fileSizeBytes: await _byteSizeOf(pages: stored),
+      documentType: 'Image',
     );
     _documents.insert(0, doc);
     await _persist();
     return doc;
+  }
+
+  /// Writes a local PDF next to the page images and records export metadata.
+  Future<Document?> attachPdf({
+    required int documentId,
+    required List<int> bytes,
+  }) async {
+    await ensureLoaded();
+    final index = _documents.indexWhere((d) => d.id == documentId);
+    if (index == -1) return null;
+
+    final existing = _documents[index];
+    final pdfPath = await _storage.writePdf(
+      documentId: 'doc_$documentId',
+      bytes: bytes,
+    );
+    final updated = existing.copyWith(
+      pdfPath: pdfPath,
+      documentType: 'PDF',
+      fileSizeBytes: await _byteSizeOf(pages: existing.pages, pdfPath: pdfPath),
+    );
+    _documents[index] = updated;
+    await _persist();
+    return updated;
+  }
+
+  Future<int> _byteSizeOf({
+    required List<ScanPage> pages,
+    String? pdfPath,
+  }) async {
+    var total = 0;
+    for (final page in pages) {
+      try {
+        total += await File(page.path).length();
+      } catch (_) {}
+    }
+    if (pdfPath != null) {
+      try {
+        total += await File(pdfPath).length();
+      } catch (_) {}
+    }
+    return total;
+  }
+
+  /// Meaningful local filename stem, e.g. `Scan_2024-05-18`.
+  Future<String> nextScanTitle([DateTime? now]) async {
+    await ensureLoaded();
+    return scanFileTitle(now ?? DateTime.now(), _documents.map((d) => d.title));
+  }
+
+  static String scanFileTitle(DateTime now, Iterable<String> existing) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final base = 'Scan_${now.year}-${two(now.month)}-${two(now.day)}';
+    final used = existing.toSet();
+    if (!used.contains(base)) return base;
+    var n = 2;
+    while (used.contains('${base}_$n')) {
+      n++;
+    }
+    return '${base}_$n';
   }
 
   Future<ScanPage> _writeProcessedPage(
@@ -503,6 +571,9 @@ class DocumentStore implements DocumentRepository {
               'title': doc.title,
               'createdAt': doc.createdAt.toIso8601String(),
               'edgesAlreadyApplied': doc.edgesAlreadyApplied,
+              if (doc.pdfPath != null) 'pdfPath': rel(doc.pdfPath!),
+              if (doc.fileSizeBytes != null) 'fileSizeBytes': doc.fileSizeBytes,
+              'documentType': doc.documentType,
               'pages': [
                 for (final page in doc.pages)
                   {
@@ -514,6 +585,8 @@ class DocumentStore implements DocumentRepository {
                       'filter': page.adjustments.filter.index,
                       'brightness': page.adjustments.brightness,
                       'contrast': page.adjustments.contrast,
+                      'sharpness': page.adjustments.sharpness,
+                      'saturation': page.adjustments.saturation,
                     },
                   },
               ],

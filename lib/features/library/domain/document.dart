@@ -62,6 +62,9 @@ class Document {
     this.pages = const [],
     this.folderId,
     this.edgesAlreadyApplied = false,
+    this.pdfPath,
+    this.fileSizeBytes,
+    this.documentType = 'Image',
   });
 
   final int id;
@@ -74,9 +77,32 @@ class Document {
   /// perspective-cropped.
   final bool edgesAlreadyApplied;
 
+  /// Local PDF written beside the page images, when one has been generated.
+  final String? pdfPath;
+
+  /// Combined size of the stored images (and PDF, if any).
+  final int? fileSizeBytes;
+
+  /// `PDF` or `Image`.
+  final String documentType;
+
   int get pageCount => pages.length;
 
   List<String> get pagePaths => [for (final page in pages) page.path];
+
+  String get fileName => pdfPath != null ? '$title.pdf' : title;
+
+  String? get thumbnailPath => pages.isEmpty ? null : pages.first.path;
+
+  String get formattedSize {
+    final bytes = fileSizeBytes;
+    if (bytes == null) return '—';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
 
   ScanPage? pageAt(String path) {
     for (final page in pages) {
@@ -92,6 +118,9 @@ class Document {
     List<ScanPage>? pages,
     int? folderId,
     bool? edgesAlreadyApplied,
+    String? pdfPath,
+    int? fileSizeBytes,
+    String? documentType,
   }) {
     return Document(
       id: id ?? this.id,
@@ -100,6 +129,9 @@ class Document {
       pages: pages ?? this.pages,
       folderId: folderId ?? this.folderId,
       edgesAlreadyApplied: edgesAlreadyApplied ?? this.edgesAlreadyApplied,
+      pdfPath: pdfPath ?? this.pdfPath,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      documentType: documentType ?? this.documentType,
     );
   }
 }

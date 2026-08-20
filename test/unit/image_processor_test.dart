@@ -162,5 +162,32 @@ void main() {
       expect(mid(brighter), greaterThan(mid(source)));
       expect(mid(darker), lessThan(mid(source)));
     });
+
+    test('saturation toward -1 collapses colour toward luma', () {
+      final source = Raster(8, 8);
+      for (var i = 0; i < source.pixels.length; i += 3) {
+        source.pixels[i] = 220;
+        source.pixels[i + 1] = 30;
+        source.pixels[i + 2] = 40;
+      }
+      final out = applyAdjustments(
+        source,
+        const ScanAdjustments(filter: ScanFilter.original, saturation: -1),
+      );
+      expect(out.pixels[0], closeTo(out.pixels[1], 2));
+      expect(out.pixels[1], closeTo(out.pixels[2], 2));
+    });
+
+    test('positive sharpness widens an ink edge on the original', () {
+      final source = _unevenlyLitPage();
+      final out = applyAdjustments(
+        source,
+        const ScanAdjustments(filter: ScanFilter.original, sharpness: 1),
+      );
+      int lumaAt(Raster r, int x, int y) => r.pixels[(y * r.width + x) * 3];
+      final before = (lumaAt(source, 7, 45) - lumaAt(source, 4, 45)).abs();
+      final after = (lumaAt(out, 7, 45) - lumaAt(out, 4, 45)).abs();
+      expect(after, greaterThan(before));
+    });
   });
 }

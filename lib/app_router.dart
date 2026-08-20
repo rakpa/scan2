@@ -6,6 +6,7 @@ import 'package:scan2/features/camera/presentation/native_scan_screen.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/crop/presentation/crop_screen.dart';
 import 'package:scan2/features/scan/domain/scan_result_args.dart';
+import 'package:scan2/features/scan/presentation/document_saved_screen.dart';
 import 'package:scan2/features/scan/presentation/scan_result_screen.dart';
 import 'package:scan2/features/library/presentation/document_detail_screen.dart';
 import 'package:scan2/features/home/presentation/home_shell.dart';
@@ -96,6 +97,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final extra = state.extra;
           if (extra is ScanResultArgs) return ScanResultScreen(args: extra);
           return const _RouteError(message: 'Nothing to review');
+        },
+      ),
+      GoRoute(
+        path: '/saved/:id',
+        builder: (context, state) {
+          final id = int.tryParse(state.pathParameters['id'] ?? '');
+          if (id == null) return const _RouteError(message: 'Bad document');
+          return DocumentSavedScreen(documentId: id);
         },
       ),
       GoRoute(

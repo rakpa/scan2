@@ -110,9 +110,16 @@ class BrandType {
 
 /// The "Scanella" wordmark: navy "Scan", blue "ella".
 class ScanellaWordmark extends StatelessWidget {
-  const ScanellaWordmark({super.key, this.fontSize = BrandType.wordmark});
+  const ScanellaWordmark({
+    super.key,
+    this.fontSize = BrandType.wordmark,
+    this.color,
+  });
 
   final double fontSize;
+
+  /// When set, both halves of the word use this colour (Screen 10 is all blue).
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -122,15 +129,16 @@ class ScanellaWordmark extends StatelessWidget {
       letterSpacing: -0.8,
       height: 1.05,
     );
+    final accent = color ?? Brand.blue;
     return RichText(
       textAlign: TextAlign.center,
       text: TextSpan(
-        style: style.copyWith(color: Brand.ink),
+        style: style.copyWith(color: color ?? Brand.ink),
         children: [
           const TextSpan(text: 'Scan'),
           TextSpan(
             text: 'ella',
-            style: style.copyWith(color: Brand.blue),
+            style: style.copyWith(color: accent),
           ),
         ],
       ),

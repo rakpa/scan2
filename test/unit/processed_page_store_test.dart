@@ -41,6 +41,8 @@ void main() {
     adjustments: const ScanAdjustments(
       filter: ScanFilter.magic,
       brightness: 0.2,
+      sharpness: 0.4,
+      saturation: -0.3,
     ),
   );
 
@@ -82,6 +84,8 @@ void main() {
 
     expect(page.adjustments.filter, ScanFilter.magic);
     expect(page.adjustments.brightness, closeTo(0.2, 1e-9));
+    expect(page.adjustments.sharpness, closeTo(0.4, 1e-9));
+    expect(page.adjustments.saturation, closeTo(-0.3, 1e-9));
     expect(page.quad, isNotNull);
     expect(
       page.quad!.topRight.dy,
@@ -201,4 +205,43 @@ void main() {
       expect(recovered.pages.single.originalPath, isNotNull);
     },
   );
+
+  test('PDF export metadata survives a restart', () async {
+    final store = newStore();
+    final doc = await store.createProcessedDocument(
+      pages: [processed(capture('a.jpg', 1), 200)],
+    );
+    expect(doc.documentType, 'Image');
+    expect(doc.title, startsWith('Scan_'));
+
+    final withPdf = await store.attachPdf(
+      documentId: doc.id,
+      bytes: Uint8List.fromList(List<int>.filled(200, 9)),
+    );
+
+    expect(withPdf, isNotNull);
+    expect(withPdf!.documentType, 'PDF');
+    expect(withPdf.pdfPath, isNotNull);
+    expect(File(withPdf.pdfPath!).existsSync(), isTrue);
+    expect(withPdf.fileName, endsWith('.pdf'));
+    expect(withPdf.fileSizeBytes, greaterThan(200));
+    expect(withPdf.thumbnailPath, doc.pages.first.path);
+
+    final reopened = (await newStore().getAllDocuments()).single;
+    expect(reopened.documentType, 'PDF');
+    expect(reopened.pdfPath, isNotNull);
+    expect(File(reopened.pdfPath!).existsSync(), isTrue);
+    expect(reopened.fileSizeBytes, withPdf.fileSizeBytes);
+  });
+
+  test('scan titles disambiguate on the same day', () async {
+    final store = newStore();
+    final day = DateTime(2024, 5, 18);
+    expect(await store.nextScanTitle(day), 'Scan_2024-05-18');
+    await store.createProcessedDocument(
+      pages: [processed(capture('a.jpg', 1), 200)],
+      title: 'Scan_2024-05-18',
+    );
+    expect(await store.nextScanTitle(day), 'Scan_2024-05-18_2');
+  });
 }

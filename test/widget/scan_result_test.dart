@@ -62,7 +62,8 @@ void main() {
 
     expect(find.byType(ScanellaWordmark), findsOneWidget);
     expect(find.text('Save'), findsOneWidget);
-    expect(find.text('Auto-detect'), findsOneWidget);
+    expect(find.text('Save Document'), findsOneWidget);
+    expect(find.textContaining('Auto-detect'), findsOneWidget);
     expect(find.textContaining('Page 1 of 1'), findsOneWidget);
 
     expect(find.text('Original'), findsOneWidget);
@@ -89,18 +90,35 @@ void main() {
     expect(find.byType(ScanResultScreen), findsNothing);
   });
 
-  testWidgets('retake returns to the camera without saving', (tester) async {
+  testWidgets('retake asks before discarding, cancel stays', (tester) async {
     await tester.pumpWidget(_app(_args()));
     await tester.pump();
 
     await tester.tap(find.text('Retake'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Retake scan?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ScanResultScreen), findsOneWidget);
+    expect(find.text('camera-home'), findsNothing);
+  });
+
+  testWidgets('retake returns to the camera without saving', (tester) async {
+    await tester.pumpWidget(_app(_args()));
+    await tester.pump();
+
+    await tester.tap(find.text('Retake'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Retake'));
+    await tester.pumpAndSettle();
+
     expect(find.text('camera-home'), findsOneWidget);
     expect(find.byType(ScanResultScreen), findsNothing);
   });
 
-  testWidgets('rotate and filter actions stay on the review screen', (
+  testWidgets('rotate, filter and adjust stay on the review screen', (
     tester,
   ) async {
     await tester.pumpWidget(_app(_args()));
@@ -118,5 +136,15 @@ void main() {
     await tester.pump();
     expect(find.text('B&W'), findsOneWidget);
     expect(find.text('Save'), findsOneWidget);
+
+    await tester.tap(find.text('Adjust'));
+    await tester.pumpAndSettle();
+    expect(find.text('Brightness'), findsOneWidget);
+    expect(find.text('Contrast'), findsOneWidget);
+    expect(find.text('Sharpness'), findsOneWidget);
+    expect(find.text('Saturation'), findsOneWidget);
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ScanResultScreen), findsOneWidget);
   });
 }
