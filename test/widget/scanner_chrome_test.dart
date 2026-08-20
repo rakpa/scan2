@@ -35,7 +35,7 @@ void main() {
                 holdProgress: 0,
                 onModeSelected: (m) => mode = m,
                 onGallery: () => gallery = true,
-                onShutter: () => shutter = true,
+                onShutter: () {},
                 onToggleAuto: () => auto = true,
               ),
             ],
