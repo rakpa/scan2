@@ -453,10 +453,31 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       }
 
       final repository = ref.read(documentRepositoryProvider);
-      final doc = await repository.createDocumentFromScans(
-        pages,
-        edgesAlreadyApplied: true,
-      );
+      if (repository is! DocumentStore) {
+        if (mounted) context.go('/library');
+        return;
+      }
+
+      final filter = ref.read(settingsProvider).defaultFilter;
+      final processed = <ProcessedPage>[];
+      for (final path in pages) {
+        final result = await _processor.process(
+          imagePath: path,
+          detectEdges: true,
+          onlyIfUncropped: true,
+          adjustments: ScanAdjustments(filter: filter),
+        );
+        processed.add(
+          ProcessedPage(
+            originalPath: path,
+            bytes: result.bytes,
+            quad: result.quad ?? const Quad.fullFrame(),
+            adjustments: result.adjustments,
+          ),
+        );
+      }
+
+      final doc = await repository.createProcessedDocument(pages: processed);
       bumpLibrary(ref);
       HapticFeedback.mediumImpact();
       if (!mounted) return;

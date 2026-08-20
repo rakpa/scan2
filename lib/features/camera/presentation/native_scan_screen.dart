@@ -75,19 +75,18 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
       for (final path in pages) {
         final result = await _processor.process(
           imagePath: path,
-          // Already perspective-corrected by the platform scanner; running
-          // edge detection again would only crop into the page.
-          detectEdges: false,
+          // VisionKit / ML Kit usually return a tight page. Crop again only
+          // when a holder, desk or second book is still in the frame — a
+          // second pass on an already-cropped page would eat into the text.
+          detectEdges: true,
+          onlyIfUncropped: true,
           adjustments: ScanAdjustments(filter: filter),
         );
         processed.add(
           ProcessedPage(
             originalPath: path,
             bytes: result.bytes,
-            // Recorded as full-frame so reopening the editor shows the page
-            // as-is. Without it the crop screen would run detection on an
-            // already-cropped page and crop a second time, into the content.
-            quad: const Quad.fullFrame(),
+            quad: result.quad ?? const Quad.fullFrame(),
             adjustments: result.adjustments,
           ),
         );

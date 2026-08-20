@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:flutter/foundation.dart';
@@ -42,12 +43,17 @@ class PageProcessor {
   /// of capture. Without it, a still that fails to detect saves the whole
   /// frame uncropped, even though the user was looking at a locked-on outline
   /// a fraction of a second earlier.
+  ///
+  /// [onlyIfUncropped] is for pages the platform scanner already returned:
+  /// crop again only when a desk, holder or second book is still in the
+  /// frame. Tight paper borders are left alone so we do not crop into text.
   Future<ProcessedCapture> process({
     required String imagePath,
     Quad? quad,
     Quad? fallbackQuad,
     ScanAdjustments adjustments = const ScanAdjustments(),
     bool detectEdges = true,
+    bool onlyIfUncropped = false,
   }) async {
     final bytes = await File(imagePath).readAsBytes();
     return compute(
@@ -60,6 +66,7 @@ class PageProcessor {
             : _FlatQuad.from(fallbackQuad),
         adjustments: adjustments,
         detectEdges: detectEdges,
+        onlyIfUncropped: onlyIfUncropped,
       ),
     );
   }
@@ -79,6 +86,7 @@ class PageProcessor {
         fallbackQuad: null,
         adjustments: adjustments,
         detectEdges: false,
+        onlyIfUncropped: false,
       ),
     );
   }
@@ -115,6 +123,7 @@ class _ProcessRequest {
     required this.fallbackQuad,
     required this.adjustments,
     required this.detectEdges,
+    required this.onlyIfUncropped,
   });
 
   final Uint8List bytes;
@@ -122,6 +131,7 @@ class _ProcessRequest {
   final _FlatQuad? fallbackQuad;
   final ScanAdjustments adjustments;
   final bool detectEdges;
+  final bool onlyIfUncropped;
 }
 
 ProcessedCapture _processIsolate(_ProcessRequest request) {
@@ -138,7 +148,11 @@ ProcessedCapture _processIsolate(_ProcessRequest request) {
 
   var quad = request.quad?.toQuad();
   if (quad == null && request.detectEdges) {
-    quad = detectQuadInRaster(source) ?? request.fallbackQuad?.toQuad();
+    final shouldDetect =
+        !request.onlyIfUncropped || looksUncropped(source);
+    if (shouldDetect) {
+      quad = detectQuadInRaster(source) ?? request.fallbackQuad?.toQuad();
+    }
   }
 
   return ProcessedCapture(
@@ -190,4 +204,58 @@ Quad? detectQuadInRaster(Raster source) {
   // Crop just inside the detected border so the page does not come out with
   // a dark rim of desk along its edges.
   return Quad.fromCorners(detection.corners).shrink(_borderInset);
+}
+
+/// True when the capture still includes a non-page rim — a desk, a book
+/// holder, another book — so a second crop is worth running.
+///
+/// A page the platform scanner already cropped tightly to paper is light
+/// (or evenly toned) out at the edges. A photo of a book on a stand is not.
+bool looksUncropped(Raster source) {
+  final small = source.downscaledTo(160);
+  final w = small.width;
+  final h = small.height;
+  if (w < 12 || h < 12) return false;
+
+  final luma = small.toLuma();
+  int at(int x, int y) => luma[y * w + x];
+
+  var interiorSum = 0;
+  var interiorN = 0;
+  final ix0 = (w * 0.25).round();
+  final ix1 = (w * 0.75).round();
+  final iy0 = (h * 0.25).round();
+  final iy1 = (h * 0.75).round();
+  for (var y = iy0; y < iy1; y += 2) {
+    for (var x = ix0; x < ix1; x += 2) {
+      interiorSum += at(x, y);
+      interiorN++;
+    }
+  }
+  if (interiorN == 0) return false;
+  final interior = interiorSum / interiorN;
+
+  final bx = math.max(1, (w * 0.04).round());
+  final by = math.max(1, (h * 0.04).round());
+  var dark = 0;
+  var borderN = 0;
+  void sample(int x, int y) {
+    borderN++;
+    if (interior - at(x, y) > 28) dark++;
+  }
+
+  for (var x = 0; x < w; x += 2) {
+    for (var y = 0; y < by; y += 1) {
+      sample(x, y);
+      sample(x, h - 1 - y);
+    }
+  }
+  for (var y = by; y < h - by; y += 2) {
+    for (var x = 0; x < bx; x += 1) {
+      sample(x, y);
+      sample(w - 1 - x, y);
+    }
+  }
+  if (borderN == 0) return false;
+  return dark / borderN > 0.32;
 }

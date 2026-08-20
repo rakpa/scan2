@@ -5,9 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:scan2/features/camera/domain/quad_detector.dart';
+import 'package:scan2/features/crop/domain/image_processor.dart';
+import 'package:scan2/features/crop/domain/page_processor.dart';
+import 'package:scan2/features/library/data/document_store.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
+import 'package:scan2/features/shared/providers/settings_provider.dart';
 
 /// Imports one or more photos from the gallery as a new document.
+///
+/// Photos of a page on a desk or in a book stand are cropped and enhanced
+/// the same way a camera capture is. Saving the original JPEG left the
+/// holder, the table and any other books in the frame.
 Future<void> importGalleryAsDocument(
   BuildContext context,
   WidgetRef ref, {
@@ -32,13 +41,36 @@ Future<void> importGalleryAsDocument(
   );
 
   try {
-    final doc = await ref
-        .read(documentRepositoryProvider)
-        .createDocumentFromScans(
-          [for (final file in files) file.path],
-          title: title,
-          edgesAlreadyApplied: true,
-        );
+    final repository = ref.read(documentRepositoryProvider);
+    if (repository is! DocumentStore) {
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      context.push('/library');
+      return;
+    }
+
+    const processor = PageProcessor();
+    final filter = ref.read(settingsProvider).defaultFilter;
+    final processed = <ProcessedPage>[];
+    for (final file in files) {
+      final result = await processor.process(
+        imagePath: file.path,
+        adjustments: ScanAdjustments(filter: filter),
+      );
+      processed.add(
+        ProcessedPage(
+          originalPath: file.path,
+          bytes: result.bytes,
+          quad: result.quad ?? const Quad.fullFrame(),
+          adjustments: result.adjustments,
+        ),
+      );
+    }
+
+    final doc = await repository.createProcessedDocument(
+      pages: processed,
+      title: title,
+    );
     bumpLibrary(ref);
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();

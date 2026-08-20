@@ -142,6 +142,76 @@ void main() {
       );
     });
 
+    test('a photo of a page on a desk is treated as uncropped', () {
+      final scene = buildColorScene(
+        corners: const [
+          Offset(210, 190),
+          Offset(700, 210),
+          Offset(780, 1000),
+          Offset(130, 970),
+        ],
+      );
+      expect(looksUncropped(scene), isTrue);
+    });
+
+    test('a tight paper page is not treated as uncropped', () {
+      final page = buildColorScene(
+        corners: const [
+          Offset(0, 0),
+          Offset(900, 0),
+          Offset(900, 1200),
+          Offset(0, 1200),
+        ],
+        backgroundR: 236,
+        backgroundG: 233,
+        backgroundB: 226,
+      );
+      expect(looksUncropped(page), isFalse);
+    });
+
+    test(
+      'platform output with leftover holder is cropped, tight pages are not',
+      () async {
+        final leftover = await const PageProcessor().process(
+          imagePath: capturePath,
+          detectEdges: true,
+          onlyIfUncropped: true,
+          adjustments: const ScanAdjustments(filter: ScanFilter.magic),
+        );
+        expect(leftover.quad, isNotNull);
+        final leftoverImage = img.decodeImage(leftover.bytes)!;
+        expect(leftoverImage.width, lessThan(900));
+        expect(leftoverImage.height, lessThan(1200));
+
+        final tightPath = '${temp.path}/tight.jpg';
+        final tight = buildColorScene(
+          corners: const [
+            Offset(0, 0),
+            Offset(900, 0),
+            Offset(900, 1200),
+            Offset(0, 1200),
+          ],
+          backgroundR: 236,
+          backgroundG: 233,
+          backgroundB: 226,
+        );
+        File(tightPath).writeAsBytesSync(
+          img.encodeJpg(tight.toImage(), quality: 92),
+        );
+
+        final kept = await const PageProcessor().process(
+          imagePath: tightPath,
+          detectEdges: true,
+          onlyIfUncropped: true,
+          adjustments: const ScanAdjustments(filter: ScanFilter.magic),
+        );
+        expect(kept.quad, isNull);
+        final keptImage = img.decodeImage(kept.bytes)!;
+        expect(keptImage.width, 900);
+        expect(keptImage.height, 1200);
+      },
+    );
+
     test('render re-derives from source bytes', () async {
       final source = File(capturePath).readAsBytesSync();
       final rendered = await const PageProcessor().render(
