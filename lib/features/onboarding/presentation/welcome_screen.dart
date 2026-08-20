@@ -1,134 +1,147 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/brand.dart';
-import 'package:scan2/core/widgets/illustrations.dart';
+import 'package:scan2/features/onboarding/presentation/onboarding_art.dart';
 
-/// Screen 1 — the first thing a new install shows.
-class WelcomeScreen extends StatelessWidget {
+/// First-install splash — blue stage, scanner mark, wordmark, tagline.
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
+
+  static const hold = Duration(milliseconds: 1800);
+
+  @override
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends State<WelcomeScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _dots;
+  Timer? _hold;
+
+  @override
+  void initState() {
+    super.initState();
+    _dots = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
+    _hold = Timer(WelcomeScreen.hold, _openOnboarding);
+  }
+
+  void _openOnboarding() {
+    if (!mounted) return;
+    context.go('/onboarding');
+  }
+
+  @override
+  void dispose() {
+    _hold?.cancel();
+    _dots.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Brand.canvas,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 18),
-                      const ScanellaAppMark(size: 96),
-                      const SizedBox(height: 16),
-                      const ScanellaWordmark(),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Document Scanner',
-                        style: BrandType.subtitle,
-                      ),
-                      const SizedBox(height: 18),
-                      const _Rule(),
-                      const SizedBox(height: 18),
-                      const Text(
-                        'Scan anything. Save everything.',
-                        textAlign: TextAlign.center,
-                        style: BrandType.headline,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Simple. Fast. Secure.',
-                        style: BrandType.subtitle,
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 312,
-                        child: HeroStage(
-                          centre: const ScannerDevice(),
-                          chips: const [
-                            HeroChip(
-                              x: 0.13,
-                              y: 0.30,
-                              icon: Icons.picture_as_pdf_rounded,
-                              color: Brand.pdfRed,
-                              label: 'PDF',
-                            ),
-                            HeroChip(
-                              x: 0.88,
-                              y: 0.38,
-                              icon: Icons.description_rounded,
-                              color: Brand.docBlue,
-                            ),
-                            HeroChip(
-                              x: 0.09,
-                              y: 0.60,
-                              icon: Icons.image_rounded,
-                              color: Brand.imageGreen,
-                            ),
-                            HeroChip(
-                              x: 0.87,
-                              y: 0.70,
-                              icon: Icons.cloud_rounded,
-                              color: Brand.cloudBlue,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Spacer(),
-                      const SizedBox(height: 12),
-                      BrandButton(
-                        label: 'Get Started',
-                        onPressed: () => context.go('/onboarding'),
-                      ),
-                      const SizedBox(height: 14),
-                      _FooterPrompt(
-                        prompt: 'Already have an account?',
-                        action: 'Login',
-                        onTap: () => context.go('/login'),
-                      ),
-                    ],
-                  ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: Brand.blue,
+        body: SafeArea(
+          child: Column(
+            children: [
+              const Spacer(flex: 5),
+              const SplashScannerMark(size: 176),
+              const SizedBox(height: 28),
+              const Text(
+                'Scanella',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 40,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.8,
+                  height: 1.05,
                 ),
               ),
-            );
-          },
+              const SizedBox(height: 10),
+              Text(
+                'Scan. Save. Simplify.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const Spacer(flex: 4),
+              _SplashDots(animation: _dots),
+              const SizedBox(height: 28),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _Rule extends StatelessWidget {
-  const _Rule();
+class _SplashDots extends StatelessWidget {
+  const _SplashDots({required this.animation});
+
+  final Animation<double> animation;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(width: 46, height: 2, color: Brand.outline),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 10),
-          width: 8,
-          height: 8,
-          decoration: const BoxDecoration(
-            color: Brand.blue,
-            shape: BoxShape.circle,
-          ),
-        ),
-        Container(width: 46, height: 2, color: Brand.outline),
-      ],
+    return SizedBox(
+      width: 52,
+      height: 52,
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: _SplashDotsPainter(animation.value),
+          );
+        },
+      ),
     );
   }
 }
 
-/// "Already have an account? Login" — the split-colour prompt used on the
-/// welcome, sign-up and login screens.
-class _FooterPrompt extends StatelessWidget {
-  const _FooterPrompt({
+class _SplashDotsPainter extends CustomPainter {
+  _SplashDotsPainter(this.t);
+
+  final double t;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const count = 12;
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.width * 0.38;
+    for (var i = 0; i < count; i++) {
+      final phase = (t * count + i) % count;
+      final alpha = 0.22 + 0.78 * (1 - (phase / count));
+      final angle = -1.5708 + (i / count) * 6.2832;
+      canvas.drawCircle(
+        Offset(c.dx + r * math.cos(angle), c.dy + r * math.sin(angle)),
+        3.1,
+        Paint()..color = Colors.white.withValues(alpha: alpha),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SplashDotsPainter oldDelegate) =>
+      oldDelegate.t != t;
+}
+
+/// "Already have an account? Login" — used on sign-up and login.
+class AuthFooterPrompt extends StatelessWidget {
+  const AuthFooterPrompt({
+    super.key,
     required this.prompt,
     required this.action,
     required this.onTap,
@@ -152,22 +165,4 @@ class _FooterPrompt extends StatelessWidget {
       ],
     );
   }
-}
-
-/// Shared by the auth screens so the prompt style stays identical.
-class AuthFooterPrompt extends StatelessWidget {
-  const AuthFooterPrompt({
-    super.key,
-    required this.prompt,
-    required this.action,
-    required this.onTap,
-  });
-
-  final String prompt;
-  final String action;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) =>
-      _FooterPrompt(prompt: prompt, action: action, onTap: onTap);
 }
