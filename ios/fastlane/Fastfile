@@ -81,6 +81,44 @@ rescue StandardError => e
   UI.important("Could not disable TestFlight screenshot feedback: #{e.class}: #{e.message}")
 end
 
+# Internal testers see a build automatically. Named groups (ours is "Rakesh")
+# do not, unless the build is added to that group — testers then keep seeing
+# an older build in the TestFlight app.
+def add_build_to_all_beta_groups!
+  app = Spaceship::ConnectAPI::App.find(APP_ID)
+  unless app
+    UI.important("App #{APP_ID} not found; cannot add the build to tester groups")
+    return
+  end
+
+  build_number = ENV["BUILD_NUMBER"].to_s.strip
+  builds = Spaceship::ConnectAPI::Build.all(app_id: app.id)
+  build = builds.find { |item| item.version.to_s == build_number } ||
+          builds.max_by { |item| item.uploaded_date.to_s }
+  unless build
+    UI.important("No processed TestFlight build found to add to groups")
+    return
+  end
+
+  groups = app.get_beta_groups
+  if groups.empty?
+    UI.important("No TestFlight groups found for #{APP_ID}")
+    return
+  end
+
+  groups.each do |group|
+    UI.message("Adding build #{build.version} to TestFlight group '#{group.name}'")
+    begin
+      build.add_beta_groups(beta_groups: [group])
+      UI.success("Build is in TestFlight group '#{group.name}'")
+    rescue StandardError => e
+      UI.important("Could not add build to '#{group.name}': #{e.class}: #{e.message}")
+    end
+  end
+rescue StandardError => e
+  UI.important("Could not add build to TestFlight groups: #{e.class}: #{e.message}")
+end
+
 def revoke_distribution_certificates_for_ci!
   return if ENV["IOS_DIST_CERT_P12_BASE64"].to_s.strip.length.positive?
   return unless ENV.fetch("IOS_AUTO_REVOKE_STALE_CERTS", "true") == "true"
@@ -317,6 +355,7 @@ platform :ios do
           distribute_external: false,
           notify_external_testers: false
         )
+        add_build_to_all_beta_groups!
         UI.success(
           "TestFlight build #{build_name} (#{build_number}) finished processing " \
           "and is ready for internal testing."

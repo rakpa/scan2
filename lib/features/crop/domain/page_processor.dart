@@ -9,6 +9,7 @@ import 'package:scan2/features/camera/domain/document_quad_detector.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/crop/domain/perspective_transformer.dart';
+import 'package:scan2/features/crop/domain/spread_snip.dart';
 
 /// The finished bytes for a page plus the settings that produced them.
 @immutable
@@ -153,6 +154,22 @@ ProcessedCapture _processIsolate(_ProcessRequest request) {
     if (shouldDetect) {
       quad = detectQuadInRaster(source) ?? request.fallbackQuad?.toQuad();
     }
+  }
+
+  // An open book is one document to VisionKit. If the user framed a single
+  // page ("snip"), keep that page and drop the other side of the gutter.
+  final probe = source.downscaledTo(320);
+  var probeRaster = probe;
+  if (quad != null && !PerspectiveTransformer.isFullFrame(quad)) {
+    probeRaster = warpRaster(probe, quad) ?? probe;
+  }
+  final snip = detectSpreadSnip(probeRaster);
+  if (snip != null) {
+    quad = splitQuadAtGutter(
+      quad ?? const Quad.fullFrame(),
+      snip.gutterX,
+      keepRight: snip.keepRight,
+    );
   }
 
   return ProcessedCapture(
