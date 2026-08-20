@@ -9,6 +9,7 @@ import 'package:scan2/features/scan/domain/scan_result_args.dart';
 import 'package:scan2/features/scan/presentation/document_saved_screen.dart';
 import 'package:scan2/features/scan/presentation/scan_result_screen.dart';
 import 'package:scan2/features/library/presentation/document_detail_screen.dart';
+import 'package:scan2/features/library/domain/library_launch.dart';
 import 'package:scan2/features/home/presentation/home_shell.dart';
 import 'package:scan2/features/auth/domain/auth_controller.dart';
 import 'package:scan2/features/auth/presentation/create_account_screen.dart';
@@ -62,7 +63,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/library',
-        builder: (context, state) => const HomeShell(),
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is LibraryLaunch) {
+            return HomeShell(
+              initialTab: extra.tab,
+              highlightDocumentId: extra.highlightDocumentId,
+            );
+          }
+          return const HomeShell();
+        },
         routes: [
           GoRoute(
             path: 'document/:id',

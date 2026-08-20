@@ -20,7 +20,10 @@ enum DocumentSort {
 
 /// The documents workspace: search, sort, grid or list, and multi-select.
 class DocumentsView extends ConsumerStatefulWidget {
-  const DocumentsView({super.key});
+  const DocumentsView({super.key, this.highlightDocumentId});
+
+  /// Newly saved document to visually emphasise after Screen 11.
+  final int? highlightDocumentId;
 
   @override
   ConsumerState<DocumentsView> createState() => _DocumentsViewState();
@@ -214,6 +217,8 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
             index: index,
             selected: _selected.contains(documents[index].id),
             selecting: _selecting,
+            highlighted:
+                widget.highlightDocumentId == documents[index].id,
             onTap: () => _open(documents[index]),
             onToggle: () => _toggle(documents[index]),
           ),
@@ -233,6 +238,7 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
           index: index,
           selected: _selected.contains(documents[index].id),
           selecting: _selecting,
+          highlighted: widget.highlightDocumentId == documents[index].id,
           onTap: () => _open(documents[index]),
           onToggle: () => _toggle(documents[index]),
         ),
@@ -377,6 +383,7 @@ class _DocumentTile extends StatelessWidget {
     required this.index,
     required this.selected,
     required this.selecting,
+    required this.highlighted,
     required this.onTap,
     required this.onToggle,
   });
@@ -385,12 +392,14 @@ class _DocumentTile extends StatelessWidget {
   final int index;
   final bool selected;
   final bool selecting;
+  final bool highlighted;
   final VoidCallback onTap;
   final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      key: highlighted ? ValueKey('highlight-${document.id}') : null,
       onTap: onTap,
       onLongPress: onToggle,
       child: Column(
@@ -402,8 +411,8 @@ class _DocumentTile extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: selected ? Brand.blue : Brand.outline,
-                  width: selected ? 2.5 : 1,
+                  color: (selected || highlighted) ? Brand.blue : Brand.outline,
+                  width: (selected || highlighted) ? 2.5 : 1,
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -436,6 +445,12 @@ class _DocumentTile extends StatelessWidget {
                         left: 8,
                         top: 8,
                         child: _SelectionDot(selected: selected),
+                      )
+                    else if (highlighted)
+                      const Positioned(
+                        left: 8,
+                        top: 8,
+                        child: _NewBadge(),
                       ),
                   ],
                 ),
@@ -466,6 +481,7 @@ class _DocumentRow extends StatelessWidget {
     required this.index,
     required this.selected,
     required this.selecting,
+    required this.highlighted,
     required this.onTap,
     required this.onToggle,
   });
@@ -474,17 +490,19 @@ class _DocumentRow extends StatelessWidget {
   final int index;
   final bool selected;
   final bool selecting;
+  final bool highlighted;
   final VoidCallback onTap;
   final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
     return Card(
+      key: highlighted ? ValueKey('highlight-${document.id}') : null,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
         side: BorderSide(
-          color: selected ? Brand.blue : Brand.outline,
-          width: selected ? 2 : 1,
+          color: (selected || highlighted) ? Brand.blue : Brand.outline,
+          width: (selected || highlighted) ? 2 : 1,
         ),
       ),
       child: InkWell(
@@ -538,6 +556,29 @@ class _DocumentRow extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NewBadge extends StatelessWidget {
+  const _NewBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Brand.blue,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Text(
+        'New',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

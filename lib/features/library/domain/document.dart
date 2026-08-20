@@ -99,9 +99,15 @@ class Document {
     if (bytes == null) return '—';
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+      return '${_pretty(bytes / 1024)} KB';
     }
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${_pretty(bytes / (1024 * 1024))} MB';
+  }
+
+  static String _pretty(double value) {
+    return value == value.roundToDouble()
+        ? '${value.round()}'
+        : value.toStringAsFixed(1);
   }
 
   ScanPage? pageAt(String path) {

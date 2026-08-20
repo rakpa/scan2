@@ -9,6 +9,7 @@ import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/library/data/document_storage.dart';
 import 'package:scan2/features/library/domain/document.dart';
+import 'package:scan2/features/library/domain/document_folder.dart';
 import 'package:scan2/features/library/domain/document_repository.dart';
 
 /// On-disk document library.
@@ -33,7 +34,9 @@ class DocumentStore implements DocumentRepository {
   final DocumentStorage _storage;
 
   final List<Document> _documents = [];
+  final List<DocumentFolder> _folders = [];
   int _nextId = 1;
+  int _nextFolderId = 5;
   bool _loaded = false;
 
   /// Serialises manifest writes so two saves cannot interleave.
@@ -44,22 +47,29 @@ class DocumentStore implements DocumentRepository {
     _loaded = true;
     try {
       final file = File(p.join(await _storage.rootPath(), _manifestName));
-      if (!await file.exists()) return;
-      final raw = jsonDecode(await file.readAsString());
-      if (raw is! Map<String, dynamic>) return;
-      await _restore(raw);
+      if (await file.exists()) {
+        final raw = jsonDecode(await file.readAsString());
+        if (raw is Map<String, dynamic>) {
+          await _restore(raw);
+        }
+      }
     } catch (e) {
       // A corrupt manifest must not cost the user their library; the page
       // files are still on disk and can be adopted directly.
       debugPrint('Library manifest unreadable, rebuilding from disk: $e');
       await _rebuildFromDisk();
     }
+    await _ensureDefaultFolders(persist: false);
   }
 
   Future<void> _restore(Map<String, dynamic> raw) async {
     final root = await _storage.rootPath();
+    _restoreFolders(raw);
     final documents = raw['documents'];
-    if (documents is! List) return;
+    if (documents is! List) {
+      await _ensureDefaultFolders(persist: false);
+      return;
+    }
 
     for (final entry in documents) {
       if (entry is! Map) continue;
@@ -89,6 +99,9 @@ class DocumentStore implements DocumentRepository {
           pdfPath: pdfRelative is String ? p.join(root, pdfRelative) : null,
           fileSizeBytes: (entry['fileSizeBytes'] as num?)?.toInt(),
           documentType: entry['documentType'] as String? ?? 'Image',
+          folderId:
+              (entry['folderId'] as num?)?.toInt() ??
+              DocumentFolder.invoicesId,
         ),
       );
     }
@@ -98,6 +111,31 @@ class DocumentStore implements DocumentRepository {
     _nextId = storedNext is int && storedNext > _highestId()
         ? storedNext
         : _highestId() + 1;
+    await _ensureDefaultFolders(persist: false);
+  }
+
+  void _restoreFolders(Map<String, dynamic> raw) {
+    final folders = raw['folders'];
+    if (folders is! List) return;
+    for (final entry in folders) {
+      if (entry is! Map) continue;
+      final id = entry['id'];
+      final name = entry['name'];
+      if (id is! int || name is! String || name.trim().isEmpty) continue;
+      _folders.add(DocumentFolder(id: id, name: name.trim()));
+    }
+    final storedNext = raw['nextFolderId'];
+    final highest = _folders.fold<int>(0, (max, f) => f.id > max ? f.id : max);
+    _nextFolderId = storedNext is int && storedNext > highest
+        ? storedNext
+        : highest + 1;
+  }
+
+  Future<void> _ensureDefaultFolders({required bool persist}) async {
+    if (_folders.isNotEmpty) return;
+    _folders.addAll(DocumentFolder.defaults);
+    _nextFolderId = _folders.fold<int>(0, (max, f) => f.id > max ? f.id : max) + 1;
+    if (persist) await _persist();
   }
 
   ScanPage? _pageFromJson(Object? raw, String root) {
@@ -296,6 +334,7 @@ class DocumentStore implements DocumentRepository {
       pages: stored,
       fileSizeBytes: await _byteSizeOf(pages: stored),
       documentType: 'Image',
+      folderId: DocumentFolder.invoicesId,
     );
     _documents.insert(0, doc);
     await _persist();
@@ -324,6 +363,102 @@ class DocumentStore implements DocumentRepository {
     _documents[index] = updated;
     await _persist();
     return updated;
+  }
+
+  Future<List<DocumentFolder>> getFolders() async {
+    await ensureLoaded();
+    await _ensureDefaultFolders(persist: false);
+    return List.unmodifiable(_folders);
+  }
+
+  DocumentFolder? folderById(int? id) {
+    if (id == null) return null;
+    for (final folder in _folders) {
+      if (folder.id == id) return folder;
+    }
+    return null;
+  }
+
+  Future<DocumentFolder> createFolder(String name) async {
+    await ensureLoaded();
+    await _ensureDefaultFolders(persist: false);
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Folder name must not be empty');
+    }
+    final folder = DocumentFolder(id: _nextFolderId++, name: trimmed);
+    _folders.add(folder);
+    await _persist();
+    return folder;
+  }
+
+  Future<Document?> setDocumentFolder(int documentId, int folderId) async {
+    await ensureLoaded();
+    await _ensureDefaultFolders(persist: false);
+    if (folderById(folderId) == null) return getDocument(documentId);
+    final index = _documents.indexWhere((d) => d.id == documentId);
+    if (index == -1) return null;
+    final updated = _documents[index].copyWith(folderId: folderId);
+    _documents[index] = updated;
+    await _persist();
+    return updated;
+  }
+
+  /// Copies [id] into a new library entry with its own page files.
+  Future<Document?> duplicateDocument(int id) async {
+    await ensureLoaded();
+    final source = await getDocument(id);
+    if (source == null || source.pages.isEmpty) return null;
+
+    final newId = _nextId++;
+    final stored = <ScanPage>[];
+    for (var i = 0; i < source.pages.length; i++) {
+      final page = source.pages[i];
+      final pagePath = await _storage.importPage(
+        documentId: 'doc_$newId',
+        index: i,
+        sourcePath: page.path,
+      );
+      String? originalPath;
+      if (page.originalPath != null &&
+          await File(page.originalPath!).exists()) {
+        originalPath = _originalPathFor(pagePath);
+        await File(page.originalPath!).copy(originalPath);
+      }
+      stored.add(
+        ScanPage(
+          path: pagePath,
+          originalPath: originalPath,
+          quad: page.quad,
+          adjustments: page.adjustments,
+        ),
+      );
+    }
+
+    String? pdfPath;
+    if (source.pdfPath != null && await File(source.pdfPath!).exists()) {
+      pdfPath = await _storage.writePdf(
+        documentId: 'doc_$newId',
+        bytes: await File(source.pdfPath!).readAsBytes(),
+      );
+    }
+
+    final copy = Document(
+      id: newId,
+      title: source.title.endsWith(' copy')
+          ? source.title
+          : '${source.title} copy',
+      createdAt: DateTime.now(),
+      pages: stored,
+      edgesAlreadyApplied: source.edgesAlreadyApplied,
+      pdfPath: pdfPath,
+      fileSizeBytes: await _byteSizeOf(pages: stored, pdfPath: pdfPath),
+      documentType: source.documentType,
+      folderId: source.folderId ?? DocumentFolder.invoicesId,
+    );
+    _documents.insert(0, copy);
+    await _persist();
+    return copy;
   }
 
   Future<int> _byteSizeOf({
@@ -564,6 +699,10 @@ class DocumentStore implements DocumentRepository {
       final payload = <String, dynamic>{
         'version': _manifestVersion,
         'nextId': _nextId,
+        'nextFolderId': _nextFolderId,
+        'folders': [
+          for (final folder in _folders) {'id': folder.id, 'name': folder.name},
+        ],
         'documents': [
           for (final doc in _documents)
             {
@@ -574,6 +713,7 @@ class DocumentStore implements DocumentRepository {
               if (doc.pdfPath != null) 'pdfPath': rel(doc.pdfPath!),
               if (doc.fileSizeBytes != null) 'fileSizeBytes': doc.fileSizeBytes,
               'documentType': doc.documentType,
+              if (doc.folderId != null) 'folderId': doc.folderId,
               'pages': [
                 for (final page in doc.pages)
                   {

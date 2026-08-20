@@ -9,7 +9,17 @@ import 'package:scan2/features/settings/presentation/settings_screen.dart';
 
 /// The app shell: Home, Documents, a raised Scan button, Tools, Settings.
 class HomeShell extends ConsumerStatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({
+    super.key,
+    this.initialTab = 0,
+    this.highlightDocumentId,
+  });
+
+  /// 0 Home, 1 Documents, 2 Tools, 3 Settings.
+  final int initialTab;
+
+  /// When opening the Documents tab after a save, highlight this document.
+  final int? highlightDocumentId;
 
   @override
   ConsumerState<HomeShell> createState() => _HomeShellState();
@@ -17,7 +27,7 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  int _tab = 0;
+  late int _tab = widget.initialTab;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +49,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             onOpenMenu: () => _scaffoldKey.currentState?.openDrawer(),
             onViewAllDocuments: () => setState(() => _tab = 1),
           ),
-          const DocumentsView(),
+          DocumentsView(highlightDocumentId: widget.highlightDocumentId),
           const ToolsScreen(),
           const SettingsScreen(embedded: true),
         ],

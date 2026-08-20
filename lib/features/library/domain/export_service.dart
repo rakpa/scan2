@@ -1,13 +1,15 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:gal/gal.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:gal/gal.dart';
+import 'package:printing/printing.dart';
 import 'package:scan2/core/imaging/raster.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:share_plus/share_plus.dart';
@@ -42,19 +44,28 @@ class ExportService {
 
   /// Renders [document] to a PDF in the temp directory.
   Future<File> buildPdf(Document document) async {
-    final pdf = await buildPdfBytes(document);
+    final pdf = await pdfBytesFor(document);
     final directory = await getTemporaryDirectory();
     final file = File(
-      path.join(directory.path, '\${fileNameFor(document)}.pdf'),
+      path.join(directory.path, '${fileNameFor(document)}.pdf'),
     );
     await file.writeAsBytes(pdf, flush: true);
     return file;
   }
 
+  /// Bytes for the filed PDF, generating one only when it is not already stored.
+  Future<Uint8List> pdfBytesFor(Document document) async {
+    final stored = document.pdfPath;
+    if (stored != null && await File(stored).exists()) {
+      return File(stored).readAsBytes();
+    }
+    return buildPdfBytes(document);
+  }
+
   /// Filesystem-safe base name for [document].
   static String fileNameFor(Document document) => _safeFileName(document.title);
 
-  /// Shares [document] as a PDF.
+  /// Shares [document] as a PDF through the system share sheet.
   Future<void> sharePdf(Document document) async {
     final file = await buildPdf(document);
     await Share.shareXFiles([
@@ -62,23 +73,52 @@ class ExportService {
     ], subject: document.title);
   }
 
-  /// Opens the system sheet with the PDF, where "Save to Files" writes it to
-  /// iCloud Drive or On My iPhone.
+  /// Lets the user pick a destination and writes the PDF there.
   ///
-  /// iOS has no public API to present the document picker for saving without
-  /// going through the share sheet, so this is the supported route rather
-  /// than a shortcut.
-  Future<void> savePdfToFiles(Document document) => sharePdf(document);
+  /// On iOS/Android this uses the system document picker when the platform
+  /// supports saving bytes; if the user cancels, this returns `false`.
+  Future<bool> savePdfToFiles(Document document) async {
+    final bytes = await pdfBytesFor(document);
+    final name = '${fileNameFor(document)}.pdf';
+    final savedPath = await FilePicker.saveFile(
+      dialogTitle: 'Save PDF',
+      fileName: name,
+      bytes: bytes,
+      type: FileType.custom,
+      allowedExtensions: const ['pdf'],
+    );
+    if (savedPath == null || savedPath.isEmpty) return false;
+    final file = File(savedPath);
+    if (!await file.exists() || await file.length() == 0) {
+      await file.writeAsBytes(bytes, flush: true);
+    }
+    return true;
+  }
+
+  /// Opens the native print preview with the generated PDF.
+  Future<void> printPdf(Document document) async {
+    final bytes = await pdfBytesFor(document);
+    await Printing.layoutPdf(
+      name: fileNameFor(document),
+      onLayout: (_) async => bytes,
+    );
+  }
 
   /// Saves every page image into the system photo library.
   ///
   /// Throws [GalException] when access is refused, which the caller surfaces —
   /// silently doing nothing is the worst possible outcome for a save action.
   Future<int> saveToPhotos(Document document) async {
+    final allowed =
+        await Gal.hasAccess(toAlbum: true) ||
+        await Gal.requestAccess(toAlbum: true);
+    if (!allowed) {
+      throw StateError('Photo library access was not granted.');
+    }
     var saved = 0;
     for (final page in document.pages) {
       if (!File(page.path).existsSync()) continue;
-      await Gal.putImage(page.path, album: 'Scan2');
+      await Gal.putImage(page.path, album: 'Scanella');
       saved++;
     }
     if (saved == 0) {

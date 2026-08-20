@@ -131,8 +131,8 @@ Future<String> runExportAction(
 ) async {
   switch (action) {
     case ExportAction.savePdfToFiles:
-      await exporter.savePdfToFiles(document);
-      return 'Choose a location to save the PDF';
+      final saved = await exporter.savePdfToFiles(document);
+      return saved ? 'PDF saved to Files' : '';
     case ExportAction.saveToPhotos:
       final saved = await exporter.saveToPhotos(document);
       return 'Saved $saved page${saved == 1 ? '' : 's'} to Photos';

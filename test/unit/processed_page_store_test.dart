@@ -244,4 +244,44 @@ void main() {
     );
     expect(await store.nextScanTitle(day), 'Scan_2024-05-18_2');
   });
+
+  test('new scans land in Invoices and can move folders', () async {
+    final store = newStore();
+    final doc = await store.createProcessedDocument(
+      pages: [processed(capture('a.jpg', 1), 200)],
+    );
+    expect(doc.folderId, 1);
+    final folders = await store.getFolders();
+    expect(folders.map((f) => f.name), containsAll(['Invoices', 'Receipts']));
+
+    final receipts = folders.firstWhere((f) => f.name == 'Receipts');
+    final moved = await store.setDocumentFolder(doc.id, receipts.id);
+    expect(moved!.folderId, receipts.id);
+
+    final reopened = (await newStore().getAllDocuments()).single;
+    expect(reopened.folderId, receipts.id);
+  });
+
+  test('duplicating a document copies its pages', () async {
+    final store = newStore();
+    final doc = await store.createProcessedDocument(
+      pages: [processed(capture('a.jpg', 1), 200)],
+    );
+    await store.attachPdf(
+      documentId: doc.id,
+      bytes: Uint8List.fromList(List<int>.filled(80, 3)),
+    );
+
+    final copy = await store.duplicateDocument(doc.id);
+    expect(copy, isNotNull);
+    expect(copy!.id, isNot(doc.id));
+    expect(copy.title, '${doc.title} copy');
+    expect(copy.pageCount, 1);
+    expect(File(copy.pages.first.path).existsSync(), isTrue);
+    expect(copy.pages.first.path, isNot(doc.pages.first.path));
+    expect(copy.pdfPath, isNotNull);
+    expect(File(copy.pdfPath!).existsSync(), isTrue);
+
+    expect(await store.getAllDocuments(), hasLength(2));
+  });
 }
