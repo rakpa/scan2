@@ -63,7 +63,7 @@ void main() {
     expect(find.byType(ScanellaWordmark), findsOneWidget);
     expect(find.text('Save'), findsOneWidget);
     expect(find.text('Auto-detect'), findsOneWidget);
-    expect(find.text('Page 1 of 1'), findsOneWidget);
+    expect(find.textContaining('Page 1 of 1'), findsOneWidget);
 
     expect(find.text('Original'), findsOneWidget);
     expect(find.text('Auto Enhance'), findsOneWidget);

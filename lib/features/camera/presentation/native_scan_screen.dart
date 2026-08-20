@@ -21,8 +21,8 @@ import 'package:scan2/features/shared/providers/settings_provider.dart';
 /// multi-page documents, re-editable pages, export — so the capture step uses
 /// whatever detects best on the device.
 ///
-/// Pages come back already perspective-corrected, so they only need enhancing
-/// and filing.
+/// Pages come back already perspective-corrected, so they are enhanced and
+/// then opened on the scan-result editor rather than filed immediately.
 class NativeScanScreen extends ConsumerStatefulWidget {
   const NativeScanScreen({super.key});
 
