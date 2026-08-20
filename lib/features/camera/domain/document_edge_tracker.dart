@@ -146,6 +146,7 @@ class DocumentEdgeTracker {
   Timer? _ticker;
 
   bool _autoCaptureEnabled = true;
+  double _minAutoCaptureArea = minAutoCaptureArea;
   bool _capturing = false;
   DateTime? _cooldownUntil;
   Quad? _lastCapturedQuad;
@@ -170,6 +171,10 @@ class DocumentEdgeTracker {
     _autoCaptureEnabled = enabled;
     _steadyFor = Duration.zero;
     _publish();
+  }
+
+  void setMinAutoCaptureArea(double area) {
+    _minAutoCaptureArea = area;
   }
 
   /// Feeds one analysed frame. [detected] is null when nothing was found.
@@ -256,7 +261,7 @@ class DocumentEdgeTracker {
   /// True when a real document is tracked but is too small to capture well.
   bool get _isTooFar {
     final detection = _lastDetection;
-    return detection != null && detection.areaRatio < minAutoCaptureArea;
+    return detection != null && detection.areaRatio < _minAutoCaptureArea;
   }
 
   bool _inCooldown(DateTime now) {

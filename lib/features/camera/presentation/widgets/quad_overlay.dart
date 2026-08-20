@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 
 /// Draws the live document quad over the camera preview.
@@ -9,20 +10,28 @@ class QuadOverlay extends StatelessWidget {
   const QuadOverlay({
     super.key,
     required this.quad,
-    required this.color,
+    this.color = Brand.blue,
     required this.locked,
     this.progress = 0,
+    this.showCornerHandles = true,
+    this.dimOutside = false,
   });
 
   final Quad quad;
   final Color color;
 
-  /// True once the page is recognised, which switches the overlay from a
-  /// dashed hint to a solid outline.
+  /// True once the page is recognised.
   final bool locked;
 
   /// 0–1 progress toward an automatic capture.
   final double progress;
+
+  /// Solid white circles on each corner, as on Screen 9.
+  final bool showCornerHandles;
+
+  /// Darken everything outside the page. Off on Screen 9 so the desk stays
+  /// visible around the blue frame.
+  final bool dimOutside;
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +42,8 @@ class QuadOverlay extends StatelessWidget {
           color: color,
           locked: locked,
           progress: progress,
+          showCornerHandles: showCornerHandles,
+          dimOutside: dimOutside,
         ),
         child: const SizedBox.expand(),
       ),
@@ -46,12 +57,16 @@ class _QuadPainter extends CustomPainter {
     required this.color,
     required this.locked,
     required this.progress,
+    required this.showCornerHandles,
+    required this.dimOutside,
   });
 
   final Quad quad;
   final Color color;
   final bool locked;
   final double progress;
+  final bool showCornerHandles;
+  final bool dimOutside;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -60,44 +75,36 @@ class _QuadPainter extends CustomPainter {
         .toList();
     final path = Path()..addPolygon(points, true);
 
-    // Dim everything outside the page so the edges read at a glance.
-    final scrim = Path()
-      ..addRect(Offset.zero & size)
-      ..addPath(path, Offset.zero)
-      ..fillType = PathFillType.evenOdd;
-    canvas.drawPath(
-      scrim,
-      Paint()..color = Colors.black.withValues(alpha: locked ? 0.45 : 0.3),
-    );
+    if (dimOutside) {
+      final scrim = Path()
+        ..addRect(Offset.zero & size)
+        ..addPath(path, Offset.zero)
+        ..fillType = PathFillType.evenOdd;
+      canvas.drawPath(
+        scrim,
+        Paint()..color = Colors.black.withValues(alpha: locked ? 0.45 : 0.3),
+      );
+    }
 
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color.withValues(alpha: locked ? 0.14 : 0.06)
-        ..style = PaintingStyle.fill,
-    );
     canvas.drawPath(
       path,
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = locked ? 3 : 2
+        ..strokeWidth = 3
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // Corner brackets, which read as "tracking" far better than dots do.
-    final bracket = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = locked ? 5 : 3.5
-      ..strokeCap = StrokeCap.round;
-
-    for (var i = 0; i < 4; i++) {
-      final corner = points[i];
-      final previous = points[(i + 3) % 4];
-      final next = points[(i + 1) % 4];
-      _drawBracketArm(canvas, corner, next, bracket);
-      _drawBracketArm(canvas, corner, previous, bracket);
+    if (showCornerHandles) {
+      final fill = Paint()..color = Colors.white;
+      final ring = Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      for (final corner in points) {
+        canvas.drawCircle(corner, 7, fill);
+        canvas.drawCircle(corner, 7, ring);
+      }
     }
 
     if (progress > 0.01) {
@@ -105,23 +112,6 @@ class _QuadPainter extends CustomPainter {
     }
   }
 
-  /// A short stroke from [corner] toward [towards], length-capped so it stays
-  /// a bracket rather than tracing the whole edge.
-  void _drawBracketArm(
-    Canvas canvas,
-    Offset corner,
-    Offset towards,
-    Paint paint,
-  ) {
-    final delta = towards - corner;
-    final length = delta.distance;
-    if (length < 1) return;
-    final armLength = (length * 0.22).clamp(8.0, 34.0);
-    canvas.drawLine(corner, corner + delta / length * armLength, paint);
-  }
-
-  /// Countdown ring at the centre of the page, so the shutter never fires
-  /// without warning.
   void _drawProgressRing(Canvas canvas, List<Offset> points, Size size) {
     final centre = points.reduce((a, b) => a + b) / 4;
     final radius = size.shortestSide * 0.055;
@@ -135,7 +125,7 @@ class _QuadPainter extends CustomPainter {
     );
     canvas.drawArc(
       Rect.fromCircle(center: centre, radius: radius),
-      -1.5707963, // start at 12 o'clock
+      -1.5707963,
       6.2831853 * progress.clamp(0.0, 1.0),
       false,
       Paint()
@@ -151,5 +141,7 @@ class _QuadPainter extends CustomPainter {
       old.quad != quad ||
       old.color != color ||
       old.locked != locked ||
-      old.progress != progress;
+      old.progress != progress ||
+      old.showCornerHandles != showCornerHandles ||
+      old.dimOutside != dimOutside;
 }
