@@ -103,6 +103,7 @@ class DocumentStore implements DocumentRepository {
               (entry['folderId'] as num?)?.toInt() ??
               DocumentFolder.invoicesId,
           favorited: entry['favorited'] as bool? ?? false,
+          modifiedAt: DateTime.tryParse(entry['modifiedAt'] as String? ?? ''),
         ),
       );
     }
@@ -379,6 +380,77 @@ class DocumentStore implements DocumentRepository {
       pdfPath: pdfPath,
       documentType: 'PDF',
       fileSizeBytes: await _byteSizeOf(pages: existing.pages, pdfPath: pdfPath),
+      modifiedAt: DateTime.now(),
+    );
+    _documents[index] = updated;
+    await _persist();
+    return updated;
+  }
+
+  /// Replaces every page of [documentId] in place so Screen 10 can edit
+  /// without creating a second library entry.
+  Future<Document?> replaceProcessedDocument({
+    required int documentId,
+    required List<ProcessedPage> pages,
+  }) async {
+    if (pages.isEmpty) throw ArgumentError('pages must not be empty');
+    await ensureLoaded();
+    final index = _documents.indexWhere((d) => d.id == documentId);
+    if (index == -1) return null;
+    final existing = _documents[index];
+
+    final stored = <ScanPage>[];
+    for (var i = 0; i < pages.length; i++) {
+      final page = pages[i];
+      var source = page.originalPath;
+      final sourceFile = File(source);
+      if (await sourceFile.exists()) {
+        final ext = p.extension(source).isEmpty ? '.jpg' : p.extension(source);
+        final temp = File(
+          p.join(
+            Directory.systemTemp.path,
+            'scanella_replace_${documentId}_${i}_'
+            '${DateTime.now().microsecondsSinceEpoch}$ext',
+          ),
+        );
+        await sourceFile.copy(temp.path);
+        source = temp.path;
+      }
+      stored.add(
+        await _writeProcessedPage(
+          'doc_$documentId',
+          i,
+          ProcessedPage(
+            originalPath: source,
+            bytes: page.bytes,
+            quad: page.quad,
+            adjustments: page.adjustments,
+          ),
+        ),
+      );
+    }
+
+    final keep = <String>{
+      for (final page in stored) page.path,
+      for (final page in stored)
+        if (page.originalPath != null) page.originalPath!,
+    };
+    for (final page in existing.pages) {
+      for (final path in [page.path, page.originalPath]) {
+        if (path == null || keep.contains(path)) continue;
+        try {
+          await File(path).delete();
+        } catch (_) {}
+      }
+    }
+
+    final updated = existing.copyWith(
+      pages: stored,
+      modifiedAt: DateTime.now(),
+      fileSizeBytes: await _byteSizeOf(
+        pages: stored,
+        pdfPath: existing.pdfPath,
+      ),
     );
     _documents[index] = updated;
     await _persist();
@@ -651,7 +723,10 @@ class DocumentStore implements DocumentRepository {
     await ensureLoaded();
     final index = _documents.indexWhere((d) => d.id == id);
     if (index == -1) return;
-    _documents[index] = _documents[index].copyWith(title: title);
+    _documents[index] = _documents[index].copyWith(
+      title: title,
+      modifiedAt: DateTime.now(),
+    );
     await _persist();
   }
 
@@ -749,6 +824,7 @@ class DocumentStore implements DocumentRepository {
               'documentType': doc.documentType,
               if (doc.folderId != null) 'folderId': doc.folderId,
               'favorited': doc.favorited,
+              'modifiedAt': doc.lastModified.toIso8601String(),
               'pages': [
                 for (final page in doc.pages)
                   {

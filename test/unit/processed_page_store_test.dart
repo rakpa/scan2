@@ -7,6 +7,7 @@ import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/library/data/document_storage.dart';
 import 'package:scan2/features/library/data/document_store.dart';
+import 'package:scan2/features/library/domain/document_folder.dart';
 
 void main() {
   late Directory tempRoot;
@@ -289,6 +290,34 @@ void main() {
     expect(File(copy.pdfPath!).existsSync(), isTrue);
 
     expect(await store.getAllDocuments(), hasLength(2));
+  });
+
+  test('replacing pages keeps the same document id', () async {
+    final store = newStore();
+    final original = await store.createProcessedDocument(
+      pages: [processed(capture('a.jpg', 1), 200)],
+      title: 'Keep_Me',
+    );
+    await store.setDocumentFolder(original.id, DocumentFolder.receiptsId);
+    await store.setFavorited(original.id, true);
+
+    final updated = await store.replaceProcessedDocument(
+      documentId: original.id,
+      pages: [processed(capture('b.jpg', 9), 80)],
+    );
+    expect(updated, isNotNull);
+    expect(updated!.id, original.id);
+    expect(updated.title, 'Keep_Me');
+    expect(updated.folderId, DocumentFolder.receiptsId);
+    expect(updated.favorited, isTrue);
+    expect(updated.pageCount, 1);
+    expect(File(updated.pages.first.path).existsSync(), isTrue);
+    expect(await store.getAllDocuments(), hasLength(1));
+
+    final reopened = (await newStore().getAllDocuments()).single;
+    expect(reopened.id, original.id);
+    expect(reopened.title, 'Keep_Me');
+    expect(reopened.favorited, isTrue);
   });
 
   test('favorite flag survives a restart', () async {

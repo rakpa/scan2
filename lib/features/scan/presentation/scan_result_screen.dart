@@ -12,6 +12,7 @@ import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/crop/domain/page_processor.dart';
 import 'package:scan2/features/crop/domain/scan_preview.dart';
 import 'package:scan2/features/library/data/document_store.dart';
+import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/export_service.dart';
 import 'package:scan2/features/scan/domain/scan_result_args.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
@@ -262,13 +263,16 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
   }
 
   Future<void> _retake() async {
+    final editing = widget.args.existingDocumentId != null;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('Retake scan?'),
-          content: const Text(
-            'This capture will be discarded and you will return to the camera.',
+          title: Text(editing ? 'Discard edits?' : 'Retake scan?'),
+          content: Text(
+            editing
+                ? 'Unsaved changes to this document will be discarded.'
+                : 'This capture will be discarded and you will return to the camera.',
           ),
           actions: [
             TextButton(
@@ -277,16 +281,33 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Retake'),
+              child: Text(editing ? 'Discard' : 'Retake'),
             ),
           ],
         );
       },
     );
-    if (confirmed == true && mounted) context.go('/camera');
+    if (confirmed == true && mounted) {
+      if (editing) {
+        _back();
+      } else {
+        context.go('/camera');
+      }
+    }
   }
 
-  void _back() => context.go('/library');
+  void _back() {
+    final id = widget.args.existingDocumentId;
+    if (id != null) {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/library/document/$id');
+      }
+      return;
+    }
+    context.go('/library');
+  }
 
   Future<void> _save() async {
     if (_saving) return;
@@ -301,11 +322,24 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
       for (final page in _pages) {
         processed.add(await page.toProcessed(_processor));
       }
-      final title = await repository.nextScanTitle();
-      var doc = await repository.createProcessedDocument(
-        pages: processed,
-        title: title,
-      );
+      final existingId = widget.args.existingDocumentId;
+      Document doc;
+      if (existingId != null) {
+        final updated = await repository.replaceProcessedDocument(
+          documentId: existingId,
+          pages: processed,
+        );
+        if (updated == null) {
+          throw StateError('This document is no longer in the library.');
+        }
+        doc = updated;
+      } else {
+        final title = await repository.nextScanTitle();
+        doc = await repository.createProcessedDocument(
+          pages: processed,
+          title: title,
+        );
+      }
       try {
         final pdfBytes = await _exporter.buildPdfBytes(doc);
         doc = await repository.attachPdf(documentId: doc.id, bytes: pdfBytes) ??
@@ -316,7 +350,11 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
       bumpLibrary(ref);
       HapticFeedback.mediumImpact();
       if (!mounted) return;
-      context.go('/saved/${doc.id}');
+      if (existingId != null) {
+        context.go('/library/document/${doc.id}');
+      } else {
+        context.go('/saved/${doc.id}');
+      }
     } catch (e) {
       debugPrint('Scan save failed: $e');
       if (!mounted) return;

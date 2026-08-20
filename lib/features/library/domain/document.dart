@@ -66,6 +66,7 @@ class Document {
     this.fileSizeBytes,
     this.documentType = 'Image',
     this.favorited = false,
+    this.modifiedAt,
   });
 
   final int id;
@@ -88,6 +89,11 @@ class Document {
   final String documentType;
 
   final bool favorited;
+
+  /// Last local edit. Falls back to [createdAt] for older library entries.
+  final DateTime? modifiedAt;
+
+  DateTime get lastModified => modifiedAt ?? createdAt;
 
   int get pageCount => pages.length;
 
@@ -137,6 +143,7 @@ class Document {
     int? fileSizeBytes,
     String? documentType,
     bool? favorited,
+    DateTime? modifiedAt,
   }) {
     return Document(
       id: id ?? this.id,
@@ -149,6 +156,7 @@ class Document {
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
       documentType: documentType ?? this.documentType,
       favorited: favorited ?? this.favorited,
+      modifiedAt: modifiedAt ?? this.modifiedAt,
     );
   }
 }
