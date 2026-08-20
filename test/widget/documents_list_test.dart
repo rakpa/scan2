@@ -49,12 +49,12 @@ void main() {
     await tester.pumpWidget(_app(extra: _receipt()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Receipts'));
+    await tester.tap(find.byKey(const ValueKey('category-Receipts')));
     await tester.pumpAndSettle();
     expect(find.text('Receipt_Coffee_Shop'), findsOneWidget);
     expect(find.text('Invoice_2024-05-18'), findsNothing);
 
-    await tester.tap(find.text('All'));
+    await tester.tap(find.byKey(const ValueKey('category-All')));
     await tester.pumpAndSettle();
     expect(find.text('Invoice_2024-05-18'), findsOneWidget);
   });

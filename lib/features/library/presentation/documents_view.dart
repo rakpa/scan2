@@ -805,11 +805,11 @@ class _CategoryChips extends StatelessWidget {
       height: 44,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        cacheExtent: 800,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           for (final name in DocumentFolder.chipNames)
             Padding(
+              key: ValueKey('category-$name'),
               padding: const EdgeInsets.only(right: 8),
               child: _Chip(
                 name: name,
