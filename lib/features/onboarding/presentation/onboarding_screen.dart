@@ -187,9 +187,8 @@ class _SplitHeadline extends StatelessWidget {
       letterSpacing: -0.5,
       height: 1.2,
     );
-    return RichText(
-      textAlign: TextAlign.center,
-      text: TextSpan(
+    return Text.rich(
+      TextSpan(
         style: style.copyWith(color: Brand.ink),
         children: [
           TextSpan(text: lead),
@@ -199,6 +198,7 @@ class _SplitHeadline extends StatelessWidget {
           ),
         ],
       ),
+      textAlign: TextAlign.center,
     );
   }
 }
