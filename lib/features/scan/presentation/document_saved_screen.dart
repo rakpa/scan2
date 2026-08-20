@@ -55,37 +55,40 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
                           onDone: _goHome,
                         ),
                         Expanded(
-                          child: ListView(
+                          child: SingleChildScrollView(
                             padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                            children: [
-                              const _SuccessCard(),
-                              const SizedBox(height: 14),
-                              _InfoCard(
-                                document: document,
-                                onRename: () => _rename(document),
-                                onMore: () => _more(document),
-                              ),
-                              const SizedBox(height: 14),
-                              _PreviewCard(document: document),
-                              const SizedBox(height: 16),
-                              _ActionRow(
-                                onShare: () => _run(
-                                  'Preparing PDF…',
-                                  () => _exporter.sharePdf(document),
+                            child: Column(
+                              children: [
+                                const _SuccessCard(),
+                                const SizedBox(height: 14),
+                                _InfoCard(
+                                  document: document,
+                                  onRename: () => _rename(document),
+                                  onMore: () => _more(document),
                                 ),
-                                onSaveToFiles: () => _saveToFiles(document),
-                                onSaveToGallery: () => _saveToGallery(document),
-                                onPrint: () => _run(
-                                  'Preparing print…',
-                                  () => _exporter.printPdf(document),
+                                const SizedBox(height: 14),
+                                _PreviewCard(document: document),
+                                const SizedBox(height: 16),
+                                _ActionRow(
+                                  onShare: () => _run(
+                                    'Preparing PDF…',
+                                    () => _exporter.sharePdf(document),
+                                  ),
+                                  onSaveToFiles: () => _saveToFiles(document),
+                                  onSaveToGallery: () =>
+                                      _saveToGallery(document),
+                                  onPrint: () => _run(
+                                    'Preparing print…',
+                                    () => _exporter.printPdf(document),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 14),
-                              _LocationRow(
-                                folderName: _folderName(document),
-                                onChange: () => _changeFolder(document),
-                              ),
-                            ],
+                                const SizedBox(height: 14),
+                                _LocationRow(
+                                  folderName: _folderName(document),
+                                  onChange: () => _changeFolder(document),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         Padding(
@@ -212,23 +215,19 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
   Future<void> _changeFolder(Document document) async {
     final store = _store;
     List<DocumentFolder> folders = DocumentFolder.defaults;
-    try {
-      final loaded = store == null ? null : await store.getFolders();
-      if (loaded != null && loaded.isNotEmpty) folders = loaded;
-    } catch (_) {
-      // Tests and web have no documents directory; the default categories still
-      // let the user pick a destination.
-    }
+    final cached = store?.cachedFolders;
+    if (cached != null && cached.isNotEmpty) folders = cached;
     if (!mounted) return;
     final chosen = await showModalBottomSheet<Object>(
       context: context,
       backgroundColor: Brand.surface,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -291,6 +290,7 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Brand.surface,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -412,8 +412,8 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
         ],
       ),
     );
-    controller.dispose();
     final trimmed = value?.trim();
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
     if (trimmed == null || trimmed.isEmpty) return null;
     return trimmed;
   }

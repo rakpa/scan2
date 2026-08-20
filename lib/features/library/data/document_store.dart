@@ -371,6 +371,10 @@ class DocumentStore implements DocumentRepository {
     return List.unmodifiable(_folders);
   }
 
+  /// Folders already in memory, or null if the library has not been loaded.
+  List<DocumentFolder>? get cachedFolders =>
+      _loaded ? List.unmodifiable(_folders) : null;
+
   DocumentFolder? folderById(int? id) {
     if (id == null) return null;
     for (final folder in _folders) {

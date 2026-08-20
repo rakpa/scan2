@@ -122,6 +122,8 @@ void main() {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text('Change'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Change'));
     await tester.pumpAndSettle();
     expect(find.text('Move to folder'), findsOneWidget);
