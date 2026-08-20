@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/brand.dart';
@@ -9,7 +8,7 @@ import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/crop/domain/page_processor.dart';
 import 'package:scan2/features/library/data/document_store.dart';
-import 'package:scan2/features/shared/providers/db_provider.dart';
+import 'package:scan2/features/scan/presentation/scan_result_screen.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
 
 /// The default scanning screen: hands straight over to the platform's own
@@ -92,18 +91,8 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
         );
       }
 
-      final repository = ref.read(documentRepositoryProvider);
-      if (repository is! DocumentStore) {
-        if (mounted) context.go('/library');
-        return;
-      }
-
-      final doc = await repository.createProcessedDocument(pages: processed);
-      bumpLibrary(ref);
-      HapticFeedback.mediumImpact();
-
       if (!mounted) return;
-      context.go('/library/document/${doc.id}');
+      goToScanResult(context, processed);
     } catch (e) {
       debugPrint('Scan failed: $e');
       if (mounted) setState(() => _error = '$e');

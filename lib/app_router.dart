@@ -5,6 +5,8 @@ import 'package:scan2/features/camera/presentation/camera_screen.dart';
 import 'package:scan2/features/camera/presentation/native_scan_screen.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/crop/presentation/crop_screen.dart';
+import 'package:scan2/features/scan/domain/scan_result_args.dart';
+import 'package:scan2/features/scan/presentation/scan_result_screen.dart';
 import 'package:scan2/features/library/presentation/document_detail_screen.dart';
 import 'package:scan2/features/home/presentation/home_shell.dart';
 import 'package:scan2/features/auth/domain/auth_controller.dart';
@@ -88,6 +90,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           if (extra is CropArgs) return CropScreen.fromArgs(extra);
           if (extra is String) return CropScreen(imagePath: extra);
           return const _RouteError(message: 'Nothing to edit');
+        },
+      ),
+      GoRoute(
+        path: '/scan-result',
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is ScanResultArgs) return ScanResultScreen(args: extra);
+          return const _RouteError(message: 'Nothing to review');
         },
       ),
       GoRoute(

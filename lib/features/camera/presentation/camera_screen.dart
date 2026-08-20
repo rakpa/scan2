@@ -17,7 +17,7 @@ import 'package:scan2/features/camera/presentation/widgets/quad_overlay.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/crop/domain/page_processor.dart';
 import 'package:scan2/features/library/data/document_store.dart';
-import 'package:scan2/features/shared/providers/db_provider.dart';
+import 'package:scan2/features/scan/presentation/scan_result_screen.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
 
 /// A page captured in the current session, held until the batch is finished.
@@ -374,31 +374,15 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
       return;
     }
 
-    final repository = ref.read(documentRepositoryProvider);
-    if (repository is! DocumentStore) {
-      context.go('/library');
-      return;
-    }
-
-    try {
-      final doc = await repository.createProcessedDocument(
-        pages: [
-          for (final page in _batch)
-            ProcessedPage(
-              originalPath: page.originalPath,
-              bytes: page.processed.bytes,
-              quad: page.processed.quad,
-              adjustments: page.processed.adjustments,
-            ),
-        ],
-      );
-      bumpLibrary(ref);
-      if (!mounted) return;
-      context.go('/library/document/${doc.id}');
-    } catch (e) {
-      debugPrint('Saving batch failed: $e');
-      if (mounted) _showMessage('Could not save the scan: $e');
-    }
+    goToScanResult(context, [
+      for (final page in _batch)
+        ProcessedPage(
+          originalPath: page.originalPath,
+          bytes: page.processed.bytes,
+          quad: page.processed.quad,
+          adjustments: page.processed.adjustments,
+        ),
+    ]);
   }
 
   void _discardLastPage() {
@@ -452,12 +436,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         return;
       }
 
-      final repository = ref.read(documentRepositoryProvider);
-      if (repository is! DocumentStore) {
-        if (mounted) context.go('/library');
-        return;
-      }
-
       final filter = ref.read(settingsProvider).defaultFilter;
       final processed = <ProcessedPage>[];
       for (final path in pages) {
@@ -477,11 +455,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
         );
       }
 
-      final doc = await repository.createProcessedDocument(pages: processed);
-      bumpLibrary(ref);
-      HapticFeedback.mediumImpact();
       if (!mounted) return;
-      context.go('/library/document/${doc.id}');
+      goToScanResult(context, processed);
     } catch (e) {
       debugPrint('Native scanner failed: $e');
       if (mounted) {

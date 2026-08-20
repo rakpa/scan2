@@ -27,6 +27,7 @@ class CropScreen extends ConsumerStatefulWidget {
     this.initialQuad,
     this.initialAdjustments = const ScanAdjustments(),
     this.edgesAlreadyApplied = false,
+    this.popWithResult = false,
   });
 
   factory CropScreen.fromArgs(CropArgs args) => CropScreen(
@@ -34,12 +35,14 @@ class CropScreen extends ConsumerStatefulWidget {
     initialQuad: args.initialQuad,
     initialAdjustments: args.adjustments,
     edgesAlreadyApplied: args.edgesAlreadyApplied,
+    popWithResult: args.popWithResult,
   );
 
   final String? imagePath;
   final Quad? initialQuad;
   final ScanAdjustments initialAdjustments;
   final bool edgesAlreadyApplied;
+  final bool popWithResult;
 
   @override
   ConsumerState<CropScreen> createState() => _CropScreenState();
@@ -237,6 +240,23 @@ class _CropScreenState extends ConsumerState<CropScreen> {
 
     setState(() => _saving = true);
     try {
+      if (widget.popWithResult) {
+        final rendered = await _processor.render(
+          sourceBytes: await File(path).readAsBytes(),
+          quad: _quad,
+          adjustments: _adjustments,
+        );
+        if (!mounted) return;
+        context.pop(
+          CropResult(
+            quad: _quad,
+            adjustments: _adjustments,
+            bytes: rendered,
+          ),
+        );
+        return;
+      }
+
       final repository = ref.read(documentRepositoryProvider);
       final owner = await _findOwner(repository, path);
       final page = owner?.pageAt(_targetPagePath(path, owner));
@@ -489,9 +509,11 @@ class _CropScreenState extends ConsumerState<CropScreen> {
         ),
         const SizedBox(width: 12),
         FilledButton.icon(
-          onPressed: _source == null ? null : _goToEnhance,
-          icon: const Icon(Icons.arrow_forward),
-          label: const Text('Next'),
+          onPressed: _source == null
+              ? null
+              : (widget.popWithResult ? _save : _goToEnhance),
+          icon: Icon(widget.popWithResult ? Icons.check : Icons.arrow_forward),
+          label: Text(widget.popWithResult ? 'Done' : 'Next'),
         ),
       ],
     );
