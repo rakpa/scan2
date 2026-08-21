@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/library/domain/gallery_import.dart';
+import 'package:scan2/features/ocr/presentation/ocr_flow.dart';
 
 /// Shortcuts that do not live on the home grid.
 class ToolsScreen extends ConsumerWidget {
@@ -34,13 +35,27 @@ class ToolsScreen extends ConsumerWidget {
             _ToolTile(
               icon: Icons.photo_library_outlined,
               color: Brand.imageGreen,
-              title: 'Import from gallery',
-              subtitle: 'Bring in photos already on this device.',
+              title: 'Scan Photos',
+              subtitle: 'Turn gallery photos into clean scans.',
               onTap: () => importGalleryAsDocument(
                 context,
                 ref,
-                title: 'Imported files',
+                title: 'Photo scan',
               ),
+            ),
+            _ToolTile(
+              icon: Icons.text_fields_rounded,
+              color: const Color(0xFFE8920A),
+              title: 'OCR Text',
+              subtitle: 'Copy text from a photo, scan, or PDF.',
+              onTap: () => startOcrFlow(context, ref),
+            ),
+            _ToolTile(
+              icon: Icons.folder_open_outlined,
+              color: const Color(0xFF7B61FF),
+              title: 'Import Files',
+              subtitle: 'Bring in images or PDFs from Files.',
+              onTap: () => importFilesAsDocument(context, ref),
             ),
           ],
         ),

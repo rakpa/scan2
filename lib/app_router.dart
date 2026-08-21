@@ -8,6 +8,8 @@ import 'package:scan2/features/crop/presentation/crop_screen.dart';
 import 'package:scan2/features/scan/domain/scan_result_args.dart';
 import 'package:scan2/features/scan/presentation/document_saved_screen.dart';
 import 'package:scan2/features/scan/presentation/scan_result_screen.dart';
+import 'package:scan2/features/ocr/domain/ocr_args.dart';
+import 'package:scan2/features/ocr/presentation/ocr_result_screen.dart';
 import 'package:scan2/features/library/presentation/document_detail_screen.dart';
 import 'package:scan2/features/library/domain/library_launch.dart';
 import 'package:scan2/features/home/presentation/home_shell.dart';
@@ -118,6 +120,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final extra = state.extra;
           if (extra is ScanResultArgs) return ScanResultScreen(args: extra);
           return const _RouteError(message: 'Nothing to review');
+        },
+      ),
+      GoRoute(
+        path: '/ocr-result',
+        builder: (context, state) {
+          final extra = state.extra;
+          if (extra is OcrArgs) return OcrResultScreen(args: extra);
+          return const _RouteError(message: 'Nothing to read');
         },
       ),
       GoRoute(

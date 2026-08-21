@@ -7,6 +7,7 @@ import 'package:scan2/core/widgets/illustrations.dart';
 import 'package:scan2/core/widgets/page_thumbnail.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/gallery_import.dart';
+import 'package:scan2/features/ocr/presentation/ocr_flow.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
 
 /// Scanella home: welcome banner, scan shortcuts, recent documents.
@@ -41,8 +42,8 @@ class HomeScreen extends ConsumerWidget {
                   ref,
                   title: 'Photo scan',
                 ),
-                onOcr: () => _openOcr(context),
-                onImport: () => importGalleryAsDocument(
+                onOcr: () => startOcrFlow(context, ref),
+                onImport: () => importFilesAsDocument(
                   context,
                   ref,
                   title: 'Imported files',
@@ -69,32 +70,6 @@ class HomeScreen extends ConsumerWidget {
             const SliverToBoxAdapter(child: SizedBox(height: 140)),
           ],
         ),
-      ),
-    );
-  }
-
-  void _openOcr(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('OCR Text'),
-        content: const Text(
-          'Text extraction is not connected yet. You can still scan the page '
-          'and keep the image.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.push('/camera');
-            },
-            child: const Text('Scan anyway'),
-          ),
-        ],
       ),
     );
   }
@@ -244,56 +219,62 @@ class _ActionGrid extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _ActionCard(
-                  title: 'Scan Document',
-                  subtitle: 'Scan any document to get started.',
-                  icon: Icons.document_scanner_outlined,
-                  background: const Color(0xFFE8F1FF),
-                  accent: Brand.blue,
-                  onTap: onScanDocument,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _ActionCard(
+                    title: 'Scan Document',
+                    subtitle: 'Auto-edge any page with the camera.',
+                    icon: Icons.document_scanner_outlined,
+                    background: const Color(0xFFE8F1FF),
+                    accent: Brand.blue,
+                    onTap: onScanDocument,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ActionCard(
-                  title: 'Scan Photos',
-                  subtitle: 'Scan photos in high quality.',
-                  icon: Icons.image_outlined,
-                  background: const Color(0xFFE6F7ED),
-                  accent: Brand.imageGreen,
-                  onTap: onScanPhotos,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ActionCard(
+                    title: 'Scan Photos',
+                    subtitle: 'Turn gallery photos into clean scans.',
+                    icon: Icons.image_outlined,
+                    background: const Color(0xFFE6F7ED),
+                    accent: Brand.imageGreen,
+                    onTap: onScanPhotos,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _ActionCard(
-                  title: 'OCR Text',
-                  subtitle: 'Extract text from images and documents.',
-                  icon: Icons.text_fields_rounded,
-                  background: const Color(0xFFFFF6E0),
-                  accent: const Color(0xFFE8920A),
-                  onTap: onOcr,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _ActionCard(
+                    title: 'OCR Text',
+                    subtitle: 'Copy text from a photo or PDF.',
+                    icon: Icons.text_fields_rounded,
+                    background: const Color(0xFFFFF6E0),
+                    accent: const Color(0xFFE8920A),
+                    onTap: onOcr,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _ActionCard(
-                  title: 'Import Files',
-                  subtitle: 'Import from gallery, files or cloud.',
-                  icon: Icons.cloud_upload_outlined,
-                  background: const Color(0xFFF3EBFF),
-                  accent: const Color(0xFF7B61FF),
-                  onTap: onImport,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ActionCard(
+                    title: 'Import Files',
+                    subtitle: 'Bring in images or PDFs from Files.',
+                    icon: Icons.cloud_upload_outlined,
+                    background: const Color(0xFFF3EBFF),
+                    accent: const Color(0xFF7B61FF),
+                    onTap: onImport,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -327,23 +308,29 @@ class _ActionCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: Brand.surface,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(icon, color: accent, size: 24),
               ),
-              const SizedBox(height: 14),
-              Text(title, style: BrandType.title),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: BrandType.title,
+              ),
               const SizedBox(height: 4),
               Text(subtitle, style: BrandType.caption),
+              const Spacer(),
             ],
           ),
         ),
