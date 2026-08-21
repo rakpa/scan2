@@ -21,7 +21,7 @@ import 'package:scan2/features/shared/providers/onboarding_provider.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
-    initialLocation: '/library',
+    initialLocation: '/welcome',
     redirect: (context, state) {
       // Read rather than watch: rebuilding the router mid-navigation would
       // drop the current route stack.
@@ -38,8 +38,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
       // Intro done but no account chosen yet: sign up or log in.
       if (!signedIn) {
+        if (location == '/welcome') return null;
         return auth.contains(location) ? null : '/signup';
       }
+      // Cold start still plays the white splash, then WelcomeScreen
+      // continues into the library.
+      if (location == '/welcome') return null;
       // Signed in (or continuing without an account): the intro and auth
       // screens are behind us.
       if (intro.contains(location) || auth.contains(location)) {

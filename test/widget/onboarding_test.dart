@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/app_theme.dart';
+import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:scan2/features/onboarding/presentation/welcome_screen.dart';
+import 'package:scan2/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Widget _app({required String location, required Widget screen}) {
@@ -40,10 +42,24 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Scanella'), findsOneWidget);
-    expect(find.text('Scan. Save. Simplify.'), findsOneWidget);
+    expect(find.byType(ScanellaWordmark), findsOneWidget);
+    expect(find.text('Scan Anything, Save Everything.'), findsOneWidget);
+    expect(find.text('Loading...'), findsOneWidget);
+    expect(find.text('Scan. Save. Simplify.'), findsNothing);
     expect(find.text('Get Started'), findsNothing);
     expect(find.text('Login'), findsNothing);
+
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.backgroundColor, Brand.surface);
+  });
+
+  testWidgets('cold start opens on the white splash', (tester) async {
+    await tester.pumpWidget(const Scan2Root());
+    await tester.pump();
+
+    expect(find.byType(WelcomeScreen), findsOneWidget);
+    expect(find.text('Scan Anything, Save Everything.'), findsOneWidget);
+    expect(find.text('Loading...'), findsOneWidget);
   });
 
   testWidgets('splash opens onboarding after the hold', (tester) async {
@@ -63,7 +79,9 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(WelcomeScreen.hold);
+    await tester.pump();
     await tester.pump();
 
     expect(find.text('onboarding-home'), findsOneWidget);

@@ -8,14 +8,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// stops being onboarding and becomes an obstacle.
 class OnboardingNotifier extends StateNotifier<bool> {
   OnboardingNotifier() : super(true) {
-    _restore();
+    ready = _restore();
   }
 
   static const _key = 'onboarding.completed';
   SharedPreferences? _prefs;
 
-  /// Starts true so the first frame does not flash the welcome screen at
-  /// someone who finished it months ago; the real value arrives immediately.
+  /// Completes when the persisted intro flag has been read.
+  late final Future<void> ready;
+
+  /// Starts true so a returning user is not sent through intro if restore
+  /// is slower than the first redirect. [WelcomeScreen] waits on [ready]
+  /// before leaving the splash.
   Future<void> _restore() async {
     try {
       final prefs = await SharedPreferences.getInstance();

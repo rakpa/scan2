@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/camera/domain/camera_frame_analyzer.dart';
 import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
@@ -608,22 +607,20 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
   Widget _buildOverlay() {
     final tracker = _tracker;
-    if (tracker == null) return const SizedBox.expand();
+    if (tracker == null || !_autoDetect) return const SizedBox.expand();
 
-    // Repaints on detection updates without rebuilding the controls above it.
+    // Always paint the live quad while auto-detect is on. Screen 9 hid this
+    // until [ScanState.hasDocument], which made the scanner look like it had
+    // stopped detecting. Previous behaviour kept a white guide while
+    // searching, then snapped yellow/green onto the page.
     return ValueListenableBuilder<ScanState>(
       valueListenable: tracker.state,
       builder: (context, state, _) {
-        if (!_autoDetect || !state.hasDocument) {
-          return const SizedBox.expand();
-        }
         return QuadOverlay(
           quad: state.quad,
-          color: Brand.blue,
-          locked: true,
-          progress: 0,
-          showCornerHandles: true,
-          dimOutside: false,
+          color: liveScanOverlayColor(state),
+          locked: state.hasDocument,
+          progress: state.holdProgress,
         );
       },
     );

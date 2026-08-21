@@ -25,7 +25,7 @@ class AuthState {
 /// to start talking to it.
 class AuthController extends StateNotifier<AuthState> {
   AuthController() : super(const AuthState()) {
-    _restore();
+    ready = _restore();
   }
 
   static const _nameKey = 'auth.name';
@@ -33,6 +33,9 @@ class AuthController extends StateNotifier<AuthState> {
   static const _signedInKey = 'auth.signedIn';
 
   SharedPreferences? _prefs;
+
+  /// Completes when the persisted account flag has been read.
+  late final Future<void> ready;
 
   Future<void> _restore() async {
     try {

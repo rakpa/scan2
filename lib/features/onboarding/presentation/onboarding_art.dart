@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:scan2/core/theme/brand.dart';
 
-/// White line-art scanner in L-brackets, as on the splash snip.
+/// Document inside blue scanner brackets, as on the white splash snip.
 class SplashScannerMark extends StatelessWidget {
   const SplashScannerMark({super.key, this.size = 168});
 
@@ -22,78 +22,75 @@ class SplashScannerMark extends StatelessWidget {
 class _SplashScannerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = Colors.white
+    final blue = Paint()
+      ..color = Brand.blue
       ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.028
+      ..strokeWidth = size.width * 0.034
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
     void bracket(Offset origin, double dx, double dy) {
-      final arm = size.width * 0.16;
-      canvas.drawLine(origin, origin + Offset(dx * arm, 0), stroke);
-      canvas.drawLine(origin, origin + Offset(0, dy * arm), stroke);
+      final arm = size.width * 0.18;
+      canvas.drawLine(origin, origin + Offset(dx * arm, 0), blue);
+      canvas.drawLine(origin, origin + Offset(0, dy * arm), blue);
     }
 
-    final inset = size.width * 0.04;
+    final inset = size.width * 0.06;
     bracket(Offset(inset, inset), 1, 1);
     bracket(Offset(size.width - inset, inset), -1, 1);
     bracket(Offset(inset, size.height - inset), 1, -1);
     bracket(Offset(size.width - inset, size.height - inset), -1, -1);
 
-    final cx = size.width / 2;
-    final lid = RRect.fromRectAndRadius(
+    final page = RRect.fromRectAndRadius(
       Rect.fromCenter(
-        center: Offset(cx, size.height * 0.30),
-        width: size.width * 0.42,
-        height: size.height * 0.22,
+        center: Offset(size.width / 2, size.height / 2),
+        width: size.width * 0.46,
+        height: size.height * 0.58,
       ),
       Radius.circular(size.width * 0.045),
     );
-    canvas.drawRRect(lid, stroke);
-    canvas.drawLine(
-      Offset(size.width * 0.38, size.height * 0.41),
-      Offset(size.width * 0.24, size.height * 0.50),
-      stroke,
+    canvas.drawRRect(
+      page,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.white, Color(0xFFDCE8FF)],
+        ).createShader(page.outerRect),
     );
-    canvas.drawLine(
-      Offset(size.width * 0.62, size.height * 0.41),
-      Offset(size.width * 0.76, size.height * 0.50),
-      stroke,
+    canvas.drawRRect(
+      page,
+      Paint()
+        ..color = const Color(0xFFB7C8EA)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * 0.012,
     );
 
-    final body = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        size.width * 0.18,
-        size.height * 0.48,
-        size.width * 0.64,
-        size.height * 0.28,
-      ),
-      Radius.circular(size.width * 0.055),
-    );
-    canvas.drawRRect(body, stroke);
-
-    final page = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        size.width * 0.30,
-        size.height * 0.54,
-        size.width * 0.40,
-        size.height * 0.16,
-      ),
-      Radius.circular(size.width * 0.02),
-    );
-    canvas.drawRRect(page, stroke);
-    final line = Paint()
-      ..color = Colors.white
+    final rule = Paint()
+      ..color = const Color(0xFFB7C8EA)
       ..strokeWidth = size.width * 0.016
       ..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 4; i++) {
       canvas.drawLine(
-        Offset(size.width * 0.36, size.height * (0.59 + i * 0.035)),
-        Offset(size.width * (i == 1 ? 0.58 : 0.64), size.height * (0.59 + i * 0.035)),
-        line,
+        Offset(size.width * 0.36, size.height * (0.36 + i * 0.07)),
+        Offset(
+          size.width * (i == 1 ? 0.58 : 0.64),
+          size.height * (0.36 + i * 0.07),
+        ),
+        rule,
       );
     }
+
+    final scanY = size.height * 0.52;
+    canvas.drawLine(
+      Offset(size.width * 0.22, scanY),
+      Offset(size.width * 0.78, scanY),
+      Paint()
+        ..color = Brand.blue
+        ..strokeWidth = size.width * 0.028
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2),
+    );
   }
 
   @override

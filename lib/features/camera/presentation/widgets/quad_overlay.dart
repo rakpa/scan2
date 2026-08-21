@@ -1,6 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
+
+/// Guide colour used by the live edge overlay.
+///
+/// White while searching, yellow once a page is tracked, green when a
+/// capture is armed. This is the previous scanner behaviour — Screen 9
+/// briefly hid the overlay until a lock, which looked like detection
+/// had stopped.
+Color liveScanOverlayColor(ScanState state) {
+  if (state.phase == ScanPhase.capturing ||
+      state.phase == ScanPhase.captured) {
+    return const Color(0xFF4CAF50);
+  }
+  if (state.confidence >= DocumentEdgeTracker.autoCaptureConfidence) {
+    return const Color(0xFF4CAF50);
+  }
+  if (state.confidence >= DocumentEdgeTracker.minTrackConfidence) {
+    return const Color(0xFFFFC107);
+  }
+  return Colors.white70;
+}
 
 /// Draws the live document quad over the camera preview.
 ///
