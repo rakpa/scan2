@@ -26,11 +26,17 @@ class ScanResultPageDraft {
 }
 
 class ScanResultArgs {
-  const ScanResultArgs({required this.pages, this.existingDocumentId})
-    : assert(pages.length > 0);
+  const ScanResultArgs({
+    required this.pages,
+    this.existingDocumentId,
+    this.allowRetake = true,
+  }) : assert(pages.length > 0);
 
   final List<ScanResultPageDraft> pages;
 
   /// When set, Save updates this library entry instead of creating another.
   final int? existingDocumentId;
+
+  /// Camera captures can retake. Gallery and Files imports cannot.
+  final bool allowRetake;
 }

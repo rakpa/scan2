@@ -75,8 +75,9 @@ void main() {
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
     expect(find.text('Scan Document'), findsOneWidget);
-    expect(find.text('Import from Gallery'), findsOneWidget);
-    expect(find.text('Import from Files'), findsOneWidget);
+    expect(find.text('Scan Photos'), findsOneWidget);
+    expect(find.text('OCR Text'), findsOneWidget);
+    expect(find.text('Import Files'), findsOneWidget);
   });
 
   testWidgets('more menu lists library actions', (tester) async {

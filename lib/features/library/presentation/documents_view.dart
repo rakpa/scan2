@@ -9,6 +9,7 @@ import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/document_folder.dart';
 import 'package:scan2/features/library/domain/export_service.dart';
 import 'package:scan2/features/library/domain/gallery_import.dart';
+import 'package:scan2/features/ocr/presentation/ocr_flow.dart';
 import 'package:scan2/features/shared/providers/db_provider.dart';
 
 enum DocumentSort {
@@ -309,23 +310,32 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
       builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
                   leading: const Icon(Icons.document_scanner_outlined),
                   title: const Text('Scan Document'),
+                  subtitle: const Text('Auto-edge with the camera'),
                   onTap: () => Navigator.pop(ctx, 'scan'),
                 ),
                 ListTile(
                   leading: const Icon(Icons.photo_outlined),
-                  title: const Text('Import from Gallery'),
+                  title: const Text('Scan Photos'),
+                  subtitle: const Text('Turn gallery photos into scans'),
                   onTap: () => Navigator.pop(ctx, 'gallery'),
                 ),
                 ListTile(
+                  leading: const Icon(Icons.text_fields_rounded),
+                  title: const Text('OCR Text'),
+                  subtitle: const Text('Copy text from a page'),
+                  onTap: () => Navigator.pop(ctx, 'ocr'),
+                ),
+                ListTile(
                   leading: const Icon(Icons.folder_open_outlined),
-                  title: const Text('Import from Files'),
+                  title: const Text('Import Files'),
+                  subtitle: const Text('Images or PDFs from Files'),
                   onTap: () => Navigator.pop(ctx, 'files'),
                 ),
               ],
@@ -340,6 +350,8 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
         context.push('/camera');
       case 'gallery':
         await importGalleryAsDocument(context, ref, title: 'Photo scan');
+      case 'ocr':
+        await startOcrFlow(context, ref);
       case 'files':
         await importFilesAsDocument(context, ref);
     }

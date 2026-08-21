@@ -53,7 +53,11 @@ extension _EnhancePresetX on _EnhancePreset {
 }
 
 /// Opens the scan-result editor instead of filing the capture immediately.
-void goToScanResult(BuildContext context, List<ProcessedPage> pages) {
+void goToScanResult(
+  BuildContext context,
+  List<ProcessedPage> pages, {
+  bool allowRetake = true,
+}) {
   if (!context.mounted) return;
   if (pages.isEmpty) {
     context.go('/library');
@@ -62,6 +66,7 @@ void goToScanResult(BuildContext context, List<ProcessedPage> pages) {
   context.go(
     '/scan-result',
     extra: ScanResultArgs(
+      allowRetake: allowRetake,
       pages: [
         for (final page in pages)
           ScanResultPageDraft(
@@ -415,7 +420,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
                 onRotate: _rotate,
                 onFilter: _revealFilters,
                 onAdjust: _adjust,
-                onRetake: _retake,
+                onRetake: widget.args.allowRetake ? _retake : null,
               ),
               KeyedSubtree(
                 key: _presetsKey,
@@ -782,19 +787,19 @@ class _EditToolbar extends StatelessWidget {
     required this.onRotate,
     required this.onFilter,
     required this.onAdjust,
-    required this.onRetake,
+    this.onRetake,
   });
 
   final VoidCallback onCrop;
   final VoidCallback onRotate;
   final VoidCallback onFilter;
   final VoidCallback onAdjust;
-  final VoidCallback onRetake;
+  final VoidCallback? onRetake;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       child: Row(
         children: [
           _ToolButton(
@@ -817,11 +822,12 @@ class _EditToolbar extends StatelessWidget {
             label: 'Adjust',
             onTap: onAdjust,
           ),
-          _ToolButton(
-            icon: const Icon(Icons.refresh_rounded),
-            label: 'Retake',
-            onTap: onRetake,
-          ),
+          if (onRetake != null)
+            _ToolButton(
+              icon: const Icon(Icons.refresh_rounded),
+              label: 'Retake',
+              onTap: onRetake!,
+            ),
         ],
       ),
     );
