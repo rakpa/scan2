@@ -212,6 +212,45 @@ void main() {
       },
     );
 
+    test(
+      'a platform scan keeps the whole page, even with a centre rule',
+      () async {
+        // VisionKit already cropped this sheet. A dark vertical rule must
+        // not be treated as a book gutter, and no second edge pass should
+        // nibble into the content.
+        const w = 900;
+        const h = 1200;
+        final page = img.Image(width: w, height: h);
+        img.fill(page, color: img.ColorRgb8(236, 233, 226));
+        for (var y = 0; y < h; y++) {
+          for (var x = 430; x <= 470; x++) {
+            page.setPixelRgb(x, y, 28, 28, 32);
+          }
+        }
+        // A darker "photo" block on the page, the kind of inner rectangle
+        // a second detector likes to treat as the document.
+        for (var y = 180; y < 520; y++) {
+          for (var x = 120; x < 780; x++) {
+            page.setPixelRgb(x, y, 70, 90, 120);
+          }
+        }
+        final path = '${temp.path}/platform_page.jpg';
+        File(path).writeAsBytesSync(img.encodeJpg(page, quality: 92));
+
+        final result = await const PageProcessor().process(
+          imagePath: path,
+          detectEdges: false,
+          applySpreadSnip: false,
+          adjustments: const ScanAdjustments(filter: ScanFilter.original),
+        );
+
+        expect(result.quad, isNull);
+        final decoded = img.decodeImage(result.bytes)!;
+        expect(decoded.width, w);
+        expect(decoded.height, h);
+      },
+    );
+
     test('render re-derives from source bytes', () async {
       final source = File(capturePath).readAsBytesSync();
       final rendered = await const PageProcessor().render(

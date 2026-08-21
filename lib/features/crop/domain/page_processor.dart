@@ -48,6 +48,10 @@ class PageProcessor {
   /// [onlyIfUncropped] is for pages the platform scanner already returned:
   /// crop again only when a desk, holder or second book is still in the
   /// frame. Tight paper borders are left alone so we do not crop into text.
+  ///
+  /// [applySpreadSnip] splits an open two-page book. Off for platform scans:
+  /// VisionKit / ML Kit already return one page, and a centre rule or photo
+  /// on that page must not be treated as a gutter.
   Future<ProcessedCapture> process({
     required String imagePath,
     Quad? quad,
@@ -55,6 +59,7 @@ class PageProcessor {
     ScanAdjustments adjustments = const ScanAdjustments(),
     bool detectEdges = true,
     bool onlyIfUncropped = false,
+    bool applySpreadSnip = true,
   }) async {
     final bytes = await File(imagePath).readAsBytes();
     return compute(
@@ -68,6 +73,7 @@ class PageProcessor {
         adjustments: adjustments,
         detectEdges: detectEdges,
         onlyIfUncropped: onlyIfUncropped,
+        applySpreadSnip: applySpreadSnip,
       ),
     );
   }
@@ -88,6 +94,7 @@ class PageProcessor {
         adjustments: adjustments,
         detectEdges: false,
         onlyIfUncropped: false,
+        applySpreadSnip: false,
       ),
     );
   }
@@ -125,6 +132,7 @@ class _ProcessRequest {
     required this.adjustments,
     required this.detectEdges,
     required this.onlyIfUncropped,
+    required this.applySpreadSnip,
   });
 
   final Uint8List bytes;
@@ -133,6 +141,7 @@ class _ProcessRequest {
   final ScanAdjustments adjustments;
   final bool detectEdges;
   final bool onlyIfUncropped;
+  final bool applySpreadSnip;
 }
 
 ProcessedCapture _processIsolate(_ProcessRequest request) {
@@ -152,24 +161,39 @@ ProcessedCapture _processIsolate(_ProcessRequest request) {
     final shouldDetect =
         !request.onlyIfUncropped || looksUncropped(source);
     if (shouldDetect) {
-      quad = detectQuadInRaster(source) ?? request.fallbackQuad?.toQuad();
+      final detected =
+          detectQuadInRaster(source) ?? request.fallbackQuad?.toQuad();
+      // A second crop on an already-tight page eats into the content
+      // (a photo, a text block, a header). Only keep a detection that
+      // still leaves a real rim of desk or holder outside the page.
+      if (detected != null &&
+          request.onlyIfUncropped &&
+          detected.areaRatio >= _minLeftoverDeskArea) {
+        quad = null;
+      } else {
+        quad = detected;
+      }
     }
   }
 
   // An open book is one document to VisionKit. If the user framed a single
   // page ("snip"), keep that page and drop the other side of the gutter.
-  final probe = source.downscaledTo(320);
-  var probeRaster = probe;
-  if (quad != null && !PerspectiveTransformer.isFullFrame(quad)) {
-    probeRaster = warpRaster(probe, quad) ?? probe;
-  }
-  final snip = detectSpreadSnip(probeRaster);
-  if (snip != null) {
-    quad = splitQuadAtGutter(
-      quad ?? const Quad.fullFrame(),
-      snip.gutterX,
-      keepRight: snip.keepRight,
-    );
+  // Platform scans skip this: they already returned one page, and a rule
+  // or photo down the middle of that page is not a gutter.
+  if (request.applySpreadSnip) {
+    final probe = source.downscaledTo(320);
+    var probeRaster = probe;
+    if (quad != null && !PerspectiveTransformer.isFullFrame(quad)) {
+      probeRaster = warpRaster(probe, quad) ?? probe;
+    }
+    final snip = detectSpreadSnip(probeRaster);
+    if (snip != null) {
+      quad = splitQuadAtGutter(
+        quad ?? const Quad.fullFrame(),
+        snip.gutterX,
+        keepRight: snip.keepRight,
+      );
+    }
   }
 
   return ProcessedCapture(
@@ -201,6 +225,12 @@ Uint8List _renderRaster(
 
 /// How far inside the detected border to crop, as a fraction of page size.
 const _borderInset = 0.006;
+
+/// Smallest leftover-desk crop worth applying on a platform scan.
+///
+/// Above this the "page" already fills the frame — a second detection is
+/// almost always an inner box (photo, heading, table) rather than paper.
+const _minLeftoverDeskArea = 0.82;
 
 /// Runs edge detection over a full-resolution raster by analysing a
 /// downscaled luminance copy, matching the live preview's analysis size so a

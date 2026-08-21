@@ -74,11 +74,11 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
       for (final path in pages) {
         final result = await _processor.process(
           imagePath: path,
-          // VisionKit / ML Kit usually return a tight page. Crop again only
-          // when a holder, desk or second book is still in the frame — a
-          // second pass on an already-cropped page would eat into the text.
-          detectEdges: true,
-          onlyIfUncropped: true,
+          // VisionKit / ML Kit already cropped and deskewed the page.
+          // A second edge pass or book-gutter snip was randomly eating
+          // into the content (a photo, a heading, a centre rule).
+          detectEdges: false,
+          applySpreadSnip: false,
           adjustments: ScanAdjustments(filter: filter),
         );
         processed.add(
