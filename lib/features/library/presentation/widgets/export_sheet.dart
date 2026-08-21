@@ -127,20 +127,24 @@ class _ExportTile extends StatelessWidget {
 Future<String> runExportAction(
   ExportAction action,
   Document document,
-  ExportService exporter,
-) async {
+  ExportService exporter, {
+  Rect? shareOrigin,
+}) async {
   switch (action) {
     case ExportAction.savePdfToFiles:
-      final saved = await exporter.savePdfToFiles(document);
+      final saved = await exporter.savePdfToFiles(
+        document,
+        shareOrigin: shareOrigin,
+      );
       return saved ? 'PDF saved to Files' : '';
     case ExportAction.saveToPhotos:
       final saved = await exporter.saveToPhotos(document);
       return 'Saved $saved page${saved == 1 ? '' : 's'} to Photos';
     case ExportAction.sharePdf:
-      await exporter.sharePdf(document);
+      await exporter.sharePdf(document, shareOrigin: shareOrigin);
       return '';
     case ExportAction.shareImages:
-      await exporter.shareImages(document);
+      await exporter.shareImages(document, shareOrigin: shareOrigin);
       return '';
   }
 }

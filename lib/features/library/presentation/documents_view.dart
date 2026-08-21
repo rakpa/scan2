@@ -539,10 +539,18 @@ class _DocumentsViewState extends ConsumerState<DocumentsView> {
       case 'duplicate':
         await _duplicate(document);
       case 'share':
-        await _run(() => _exporter.sharePdf(document));
+        await _run(
+          () => _exporter.sharePdf(
+            document,
+            shareOrigin: ExportService.originOf(context),
+          ),
+        );
       case 'files':
         await _run(() async {
-          final saved = await _exporter.savePdfToFiles(document);
+          final saved = await _exporter.savePdfToFiles(
+            document,
+            shareOrigin: ExportService.originOf(context),
+          );
           if (saved && mounted) _toast('PDF saved to Files');
         });
       case 'gallery':

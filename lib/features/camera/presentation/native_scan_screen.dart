@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -71,23 +73,13 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
 
       final filter = ref.read(settingsProvider).defaultFilter;
       final processed = <ProcessedPage>[];
-      for (final path in pages) {
-        final result = await _processor.process(
-          imagePath: path,
-          // VisionKit / ML Kit already cropped and deskewed the page.
-          // A second edge pass or book-gutter snip was randomly eating
-          // into the content (a photo, a heading, a centre rule).
-          detectEdges: false,
-          applySpreadSnip: false,
-          adjustments: ScanAdjustments(filter: filter),
-        );
-        processed.add(
-          ProcessedPage(
-            originalPath: path,
-            bytes: result.bytes,
-            quad: result.quad ?? const Quad.fullFrame(),
-            adjustments: result.adjustments,
-          ),
+      const stride = 2;
+      for (var i = 0; i < pages.length; i += stride) {
+        final chunk = pages.sublist(i, math.min(i + stride, pages.length));
+        processed.addAll(
+          await Future.wait([
+            for (final path in chunk) _enhancePage(path, filter),
+          ]),
         );
       }
 
@@ -97,6 +89,24 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
       debugPrint('Scan failed: $e');
       if (mounted) setState(() => _error = '$e');
     }
+  }
+
+  Future<ProcessedPage> _enhancePage(String path, ScanFilter filter) async {
+    final result = await _processor.process(
+      imagePath: path,
+      // VisionKit / ML Kit already cropped and deskewed the page.
+      // A second edge pass or book-gutter snip was randomly eating
+      // into the content (a photo, a heading, a centre rule).
+      detectEdges: false,
+      applySpreadSnip: false,
+      adjustments: ScanAdjustments(filter: filter),
+    );
+    return ProcessedPage(
+      originalPath: path,
+      bytes: result.bytes,
+      quad: result.quad ?? const Quad.fullFrame(),
+      adjustments: result.adjustments,
+    );
   }
 
   @override

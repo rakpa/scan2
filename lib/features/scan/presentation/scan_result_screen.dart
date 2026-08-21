@@ -147,7 +147,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
         '${Directory.systemTemp.path}/scanella_rot_${DateTime.now().millisecondsSinceEpoch}${png ? '.png' : '.jpg'}',
       ).create();
       await out.writeAsBytes(
-        png ? img.encodePng(rotated) : img.encodeJpg(rotated, quality: 98),
+        png ? img.encodePng(rotated) : img.encodeJpg(rotated, quality: 95),
         flush: true,
       );
       return out.path;
@@ -322,10 +322,9 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
         if (mounted) context.go('/library');
         return;
       }
-      final processed = <ProcessedPage>[];
-      for (final page in _pages) {
-        processed.add(await page.toProcessed(_processor));
-      }
+      final processed = await Future.wait([
+        for (final page in _pages) page.toProcessed(_processor),
+      ]);
       final existingId = widget.args.existingDocumentId;
       Document doc;
       if (existingId != null) {
@@ -477,21 +476,30 @@ class _PageEdit {
   Future<ProcessedPage> toProcessed(PageProcessor processor) async {
     var path = originalPath;
     final turns = quarterTurns % 4;
-    if (turns != 0) {
-      final src = await File(path).readAsBytes();
-      final decoded = img.decodeImage(src);
-      if (decoded != null) {
-        final rotated = img.copyRotate(decoded, angle: turns * 90);
-        final png = _isPng(src);
-        final out = await File(
-          '${Directory.systemTemp.path}/scanella_save_${DateTime.now().millisecondsSinceEpoch}${png ? '.png' : '.jpg'}',
-        ).create();
-        await out.writeAsBytes(
-          png ? img.encodePng(rotated) : img.encodeJpg(rotated, quality: 98),
-          flush: true,
-        );
-        path = out.path;
-      }
+    // Capture and filter changes already produced [previewBytes] at full
+    // scan resolution. Re-running Auto/B&W on every page is what made a
+    // passport save take so long.
+    if (turns == 0) {
+      return ProcessedPage(
+        originalPath: path,
+        bytes: previewBytes,
+        quad: quad,
+        adjustments: adjustments,
+      );
+    }
+    final src = await File(path).readAsBytes();
+    final decoded = img.decodeImage(src);
+    if (decoded != null) {
+      final rotated = img.copyRotate(decoded, angle: turns * 90);
+      final png = _isPng(src);
+      final out = await File(
+        '${Directory.systemTemp.path}/scanella_save_${DateTime.now().millisecondsSinceEpoch}${png ? '.png' : '.jpg'}',
+      ).create();
+      await out.writeAsBytes(
+        png ? img.encodePng(rotated) : img.encodeJpg(rotated, quality: 95),
+        flush: true,
+      );
+      path = out.path;
     }
     final bytes = await processor.render(
       sourceBytes: await File(path).readAsBytes(),

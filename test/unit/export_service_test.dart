@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show Size;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -114,6 +115,16 @@ void main() {
         ),
         'Invoice 1207 draft',
       );
+    });
+
+    test('share origin sits inside the screen', () {
+      final origin = ExportService.originOnScreen(const Size(390, 844));
+      expect(origin.width, greaterThanOrEqualTo(1));
+      expect(origin.height, greaterThanOrEqualTo(1));
+      expect(origin.left, greaterThanOrEqualTo(0));
+      expect(origin.top, greaterThanOrEqualTo(0));
+      expect(origin.right, lessThanOrEqualTo(390));
+      expect(origin.bottom, lessThanOrEqualTo(844));
     });
 
     test('iCloud PathAccessException means the picker already saved', () {

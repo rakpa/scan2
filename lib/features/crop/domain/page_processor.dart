@@ -227,18 +227,29 @@ Uint8List _renderRaster(
   Uint8List? sourceBytes,
 }) {
   final skipWarp = quad == null || PerspectiveTransformer.isFullFrame(quad);
-  // VisionKit hands back a lossless PNG. Re-encoding Original as JPEG is
-  // a generation of blur for no gain.
-  if (skipWarp && adjustments.isNoOp && sourceBytes != null) {
+  // VisionKit hands back a lossless PNG. Re-encoding an already-HD Original
+  // as JPEG is a generation of blur for no gain — keep it when it already
+  // fits the scan budget.
+  if (skipWarp &&
+      adjustments.isNoOp &&
+      sourceBytes != null &&
+      math.max(source.width, source.height) <= kScanMaxEdge) {
     return sourceBytes;
   }
   var raster = source;
   if (!skipWarp) {
     raster = warpRaster(raster, quad) ?? raster;
   }
+  if (math.max(raster.width, raster.height) > kScanMaxEdge) {
+    raster = raster.downscaledTo(kScanMaxEdge);
+  }
   final out = applyAdjustments(raster, adjustments);
-  return encodeScan(out, adjustments);
+  return encodeScan(out);
 }
+
+/// Longest edge kept for a finished page. ~300 DPI on A4 — HD on screen and
+/// in print, without the multi-second encode of a 12MP VisionKit PNG.
+const int kScanMaxEdge = 2560;
 
 /// How far inside the detected border to crop, as a fraction of page size.
 const _borderInset = 0.006;

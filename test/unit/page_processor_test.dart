@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -116,6 +117,22 @@ void main() {
         expect(decoded.height, closeTo(480, 12));
       },
     );
+
+    test('a huge capture is capped to scan HD, not 12MP', () async {
+      final huge = img.Image(width: 2800, height: 2000);
+      img.fill(huge, color: img.ColorRgb8(240, 240, 235));
+      final path = '${temp.path}/huge.jpg';
+      File(path).writeAsBytesSync(img.encodeJpg(huge, quality: 92));
+
+      final result = await const PageProcessor().process(
+        imagePath: path,
+        detectEdges: false,
+        applySpreadSnip: false,
+        adjustments: const ScanAdjustments(filter: ScanFilter.magic),
+      );
+      final decoded = img.decodeImage(result.bytes)!;
+      expect(math.max(decoded.width, decoded.height), 2560);
+    });
 
     test('original platform capture is not re-encoded', () async {
       final source = File(capturePath).readAsBytesSync();

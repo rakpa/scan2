@@ -131,17 +131,15 @@ Uint8List _applyFilterIsolate(_FilterRequest request) {
 
   final raster = Raster.fromImage(img.bakeOrientation(decoded));
   final out = applyAdjustments(raster, request.adjustments);
-  return encodeScan(out, request.adjustments);
+  return encodeScan(out);
 }
 
 /// Encodes a finished page. B&W is PNG so JPEG ringing cannot blur glyph edges;
 /// everything else is high-quality 4:4:4 JPEG.
-Uint8List encodeScan(Raster raster, ScanAdjustments adjustments) {
-  final image = raster.toImage();
-  if (adjustments.filter == ScanFilter.bw) {
-    return Uint8List.fromList(img.encodePng(image));
-  }
-  return Uint8List.fromList(img.encodeJpg(image, quality: 98));
+Uint8List encodeScan(Raster raster) {
+  // JPEG 95 / 4:4:4 stays sharp on text and encodes in a fraction of PNG time,
+  // which matters when a passport is several full-resolution pages.
+  return Uint8List.fromList(img.encodeJpg(raster.toImage(), quality: 95));
 }
 
 // ---------------------------------------------------------------------------

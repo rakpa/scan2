@@ -64,16 +64,14 @@ void main() {
       expect(pixel.r, closeTo(86, 8));
     });
 
-    test('B&W is encoded as PNG so text edges stay sharp', () async {
+    test('B&W encodes as a compact JPEG, not a huge PNG', () async {
       final input = _solidJpeg(width: 32, height: 32, r: 40, g: 40, b: 40);
       final out = await processor.applyFilter(
         imageBytes: input,
         filter: ScanFilter.bw,
       );
-      expect(out[0], 0x89);
-      expect(out[1], 0x50);
-      expect(out[2], 0x4E);
-      expect(out[3], 0x47);
+      expect(out[0], 0xFF);
+      expect(out[1], 0xD8);
     });
 
     test('labels match the names shown in the crop screen', () {

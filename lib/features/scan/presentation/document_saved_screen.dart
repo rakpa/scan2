@@ -72,14 +72,24 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
                                 _ActionRow(
                                   onShare: () => _run(
                                     'Preparing PDF…',
-                                    () => _exporter.sharePdf(document),
+                                    () => _exporter.sharePdf(
+                                      document,
+                                      shareOrigin: ExportService.originOf(
+                                        context,
+                                      ),
+                                    ),
                                   ),
                                   onSaveToFiles: () => _saveToFiles(document),
                                   onSaveToGallery: () =>
                                       _saveToGallery(document),
                                   onPrint: () => _run(
                                     'Preparing print…',
-                                    () => _exporter.printPdf(document),
+                                    () => _exporter.printPdf(
+                                      document,
+                                      shareOrigin: ExportService.originOf(
+                                        context,
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 14),
@@ -184,7 +194,10 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
 
   Future<void> _saveToFiles(Document document) async {
     await _run('Saving PDF…', () async {
-      final saved = await _exporter.savePdfToFiles(document);
+      final saved = await _exporter.savePdfToFiles(
+        document,
+        shareOrigin: ExportService.originOf(context),
+      );
       if (saved && mounted) _toast('PDF saved to Files');
     });
   }

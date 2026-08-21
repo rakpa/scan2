@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:gal/gal.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
@@ -27,19 +28,21 @@ class ExportService {
   /// Separate from [buildPdf] so it can be exercised without a platform
   /// temp directory.
   Future<Uint8List> buildPdfBytes(Document document) async {
-    final images = <_SizedImage>[];
-    for (final page in document.pages) {
-      final file = File(page.path);
-      if (!await file.exists()) continue;
-      final prepared = await compute(_prepareForPdf, await file.readAsBytes());
-      if (prepared == null) continue;
-      images.add(prepared);
-    }
+    final prepared = await Future.wait([
+      for (final page in document.pages) _preparePage(page.path),
+    ]);
+    final images = [for (final image in prepared) if (image != null) image];
 
     if (images.isEmpty) {
       throw StateError('This document has no pages to export.');
     }
     return compute(_buildPdfBytes, images);
+  }
+
+  Future<_SizedImage?> _preparePage(String pagePath) async {
+    final file = File(pagePath);
+    if (!await file.exists()) return null;
+    return compute(_prepareForPdf, await file.readAsBytes());
   }
 
   /// Renders [document] to a PDF in the temp directory.
@@ -72,12 +75,41 @@ class ExportService {
   /// Filesystem-safe base name for [document].
   static String fileNameFor(Document document) => _safeFileName(document.title);
 
+  /// Anchor for the iOS/iPad share and print popover.
+  ///
+  /// share_plus throws PathAccessException-style PlatformException when this
+  /// is missing or empty: `sharePositionOrigin must be set and non-zero`.
+  static Rect originOf(BuildContext context) {
+    final box = context.findRenderObject();
+    if (box is RenderBox && box.hasSize) {
+      final size = box.size;
+      if (size.width >= 1 && size.height >= 1) {
+        return box.localToGlobal(Offset.zero) & size;
+      }
+    }
+    return originOnScreen(MediaQuery.sizeOf(context));
+  }
+
+  /// A small rect guaranteed to sit inside [size].
+  static Rect originOnScreen(Size size) {
+    if (size.width < 2 || size.height < 2) {
+      return const Rect.fromLTWH(64, 64, 48, 48);
+    }
+    return Rect.fromCenter(
+      center: Offset(size.width / 2, size.height * 0.72),
+      width: 48,
+      height: 48,
+    );
+  }
+
   /// Shares [document] as a PDF through the system share sheet.
-  Future<void> sharePdf(Document document) async {
+  Future<void> sharePdf(Document document, {Rect? shareOrigin}) async {
     final file = await buildPdf(document);
-    await Share.shareXFiles([
-      XFile(file.path, mimeType: 'application/pdf'),
-    ], subject: document.title);
+    await _shareFiles(
+      [XFile(file.path, mimeType: 'application/pdf')],
+      subject: document.title,
+      origin: shareOrigin,
+    );
   }
 
   /// Lets the user pick a destination and writes the PDF there.
@@ -86,7 +118,10 @@ class ExportService {
   /// the app sandbox. The path it returns is often iCloud Drive, which this
   /// process cannot open again (PathAccessException, errno 1). The picker
   /// has already saved — do not write to, or even `exists()`-check, that path.
-  Future<bool> savePdfToFiles(Document document) async {
+  Future<bool> savePdfToFiles(
+    Document document, {
+    Rect? shareOrigin,
+  }) async {
     final bytes = await pdfBytesFor(document);
     final name = '${fileNameFor(document)}.pdf';
     try {
@@ -104,7 +139,7 @@ class ExportService {
       // Native export already copied into Files / iCloud. Opening that URL
       // is forbidden; treating it as failure would toast the raw exception.
       if (_pickerAlreadyExported(e)) return true;
-      await sharePdf(document);
+      await sharePdf(document, shareOrigin: shareOrigin);
       return true;
     }
   }
@@ -114,12 +149,28 @@ class ExportService {
       _pickerAlreadyExported(error);
 
   /// Opens the native print preview with the generated PDF.
-  Future<void> printPdf(Document document) async {
+  /// Opens the native print preview with the generated PDF.
+  ///
+  /// iOS deadlocks if [Printing.layoutPdf] uses the default dynamic layout:
+  /// the plugin blocks the main thread waiting for PDF bytes that Dart cannot
+  /// deliver. `dynamicLayout: false` sends the bytes once, then presents.
+  Future<void> printPdf(Document document, {Rect? shareOrigin}) async {
     final bytes = await pdfBytesFor(document);
-    await Printing.layoutPdf(
-      name: fileNameFor(document),
-      onLayout: (_) async => bytes,
-    );
+    try {
+      final info = await Printing.info();
+      if (info.canPrint) {
+        await Printing.layoutPdf(
+          name: fileNameFor(document),
+          format: PdfPageFormat.a4,
+          dynamicLayout: false,
+          onLayout: (_) async => bytes,
+        );
+        return;
+      }
+    } catch (e) {
+      debugPrint('Print UI failed, offering share sheet: $e');
+    }
+    await sharePdf(document, shareOrigin: shareOrigin);
   }
 
   /// Saves every page image into the system photo library.
@@ -146,7 +197,7 @@ class ExportService {
   }
 
   /// Shares the page images themselves, for people who want the JPEGs.
-  Future<void> shareImages(Document document) async {
+  Future<void> shareImages(Document document, {Rect? shareOrigin}) async {
     final files = [
       for (final page in document.pages)
         if (File(page.path).existsSync())
@@ -160,7 +211,26 @@ class ExportService {
     if (files.isEmpty) {
       throw StateError('This document has no pages to share.');
     }
-    await Share.shareXFiles(files, subject: document.title);
+    await _shareFiles(files, subject: document.title, origin: shareOrigin);
+  }
+
+  Future<void> _shareFiles(
+    List<XFile> files, {
+    required String subject,
+    Rect? origin,
+  }) {
+    return Share.shareXFiles(
+      files,
+      subject: subject,
+      sharePositionOrigin: _nonEmptyOrigin(origin),
+    );
+  }
+
+  static Rect _nonEmptyOrigin(Rect? origin) {
+    if (origin != null && origin.width >= 1 && origin.height >= 1) {
+      return origin;
+    }
+    return const Rect.fromLTWH(80, 120, 48, 48);
   }
 
   static String _safeFileName(String title) {
@@ -194,7 +264,7 @@ class _SizedImage {
 }
 
 /// Longest edge of a page embedded in a PDF.
-const _pdfMaxEdge = 3200;
+const _pdfMaxEdge = 2560;
 
 _SizedImage? _prepareForPdf(Uint8List bytes) {
   final decoded = img.decodeImage(bytes);
@@ -210,7 +280,7 @@ _SizedImage? _prepareForPdf(Uint8List bytes) {
 
   final scaled = Raster.fromImage(decoded).downscaledTo(_pdfMaxEdge);
   return _SizedImage(
-    bytes: Uint8List.fromList(img.encodeJpg(scaled.toImage(), quality: 98)),
+    bytes: Uint8List.fromList(img.encodeJpg(scaled.toImage(), quality: 95)),
     width: scaled.width,
     height: scaled.height,
   );

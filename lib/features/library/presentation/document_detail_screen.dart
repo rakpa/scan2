@@ -120,14 +120,24 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                                 _ActionRow(
                                   onShare: () => _run(
                                     'Preparing PDF…',
-                                    () => _exporter.sharePdf(document),
+                                    () => _exporter.sharePdf(
+                                      document,
+                                      shareOrigin: ExportService.originOf(
+                                        context,
+                                      ),
+                                    ),
                                   ),
                                   onSaveToFiles: () => _saveToFiles(document),
                                   onSaveToGallery: () =>
                                       _saveToGallery(document),
                                   onPrint: () => _run(
                                     'Preparing print…',
-                                    () => _exporter.printPdf(document),
+                                    () => _exporter.printPdf(
+                                      document,
+                                      shareOrigin: ExportService.originOf(
+                                        context,
+                                      ),
+                                    ),
                                   ),
                                   onMore: () => _more(document),
                                 ),
@@ -246,7 +256,10 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
 
   Future<void> _saveToFiles(Document document) async {
     await _run('Saving PDF…', () async {
-      final saved = await _exporter.savePdfToFiles(document);
+      final saved = await _exporter.savePdfToFiles(
+        document,
+        shareOrigin: ExportService.originOf(context),
+      );
       if (saved && mounted) _toast('PDF saved to Files');
     });
   }
@@ -261,7 +274,13 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
   }
 
   Future<void> _openWith(Document document) async {
-    await _run('Opening…', () => _exporter.sharePdf(document));
+    await _run(
+      'Opening…',
+      () => _exporter.sharePdf(
+        document,
+        shareOrigin: ExportService.originOf(context),
+      ),
+    );
   }
 
   Future<void> _toggleFavorite(Document document) async {
