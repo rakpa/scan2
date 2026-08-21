@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
 import 'package:scan2/features/shared/providers/settings_provider.dart';
@@ -34,31 +33,32 @@ class SettingsScreen extends ConsumerWidget {
             const _SectionLabel('Scanning'),
             _Group(
               children: [
-                ListTile(
-                  leading: const Icon(
-                    Icons.document_scanner_outlined,
-                    color: Brand.blue,
-                  ),
-                  title: const Text('System document scanner'),
-                  subtitle: const Text(
-                    'Apple VisionKit or Google ML Kit, if you prefer it to the in-app camera.',
-                  ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => context.push('/system-scan'),
+                _SwitchRow(
+                  icon: Icons.document_scanner_outlined,
+                  title: 'Use the in-app camera',
+                  subtitle:
+                      'Off uses the system scanner, which finds edges '
+                      'best. On adds a live overlay and batch strip.',
+                  value: settings.useInAppCamera,
+                  onChanged: notifier.setUseInAppCamera,
                 ),
-                const Divider(indent: 56, endIndent: 12),
                 _SwitchRow(
                   icon: Icons.motion_photos_auto_outlined,
                   title: 'Auto-capture',
                   subtitle: 'Shoots once the page is steady.',
                   value: settings.autoCapture,
-                  onChanged: notifier.setAutoCapture,
+                  // Only meaningful for the in-app camera.
+                  onChanged: settings.useInAppCamera
+                      ? notifier.setAutoCapture
+                      : null,
                 ),
                 _SwitchRow(
                   icon: Icons.volume_up_outlined,
                   title: 'Shutter sound',
                   value: settings.shutterSound,
-                  onChanged: notifier.setShutterSound,
+                  onChanged: settings.useInAppCamera
+                      ? notifier.setShutterSound
+                      : null,
                   last: true,
                 ),
               ],

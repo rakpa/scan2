@@ -18,6 +18,7 @@ import 'package:scan2/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:scan2/features/onboarding/presentation/welcome_screen.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
 import 'package:scan2/features/shared/providers/onboarding_provider.dart';
+import 'package:scan2/features/shared/providers/settings_provider.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
@@ -90,7 +91,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/camera',
-        builder: (context, state) => const CameraScreen(),
+        builder: (context, state) {
+          // The platform scanner is the default capture path; the in-app
+          // camera is opt-in from Settings. Screen 9 briefly always opened
+          // CameraScreen, which skipped VisionKit / ML Kit auto-edge.
+          final inApp = ref.read(settingsProvider).useInAppCamera;
+          return inApp ? const CameraScreen() : const NativeScanScreen();
+        },
       ),
       GoRoute(
         path: '/system-scan',
