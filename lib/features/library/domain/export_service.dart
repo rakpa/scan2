@@ -56,8 +56,15 @@ class ExportService {
   /// Bytes for the filed PDF, generating one only when it is not already stored.
   Future<Uint8List> pdfBytesFor(Document document) async {
     final stored = document.pdfPath;
-    if (stored != null && await File(stored).exists()) {
-      return File(stored).readAsBytes();
+    if (stored != null) {
+      try {
+        final file = File(stored);
+        if (await file.exists()) {
+          return await file.readAsBytes();
+        }
+      } on FileSystemException catch (e) {
+        debugPrint('Stored PDF unreadable, rebuilding: $e');
+      }
     }
     return buildPdfBytes(document);
   }
@@ -75,25 +82,36 @@ class ExportService {
 
   /// Lets the user pick a destination and writes the PDF there.
   ///
-  /// On iOS/Android this uses the system document picker when the platform
-  /// supports saving bytes; if the user cancels, this returns `false`.
+  /// On iOS the system document picker exports a copy we already wrote into
+  /// the app sandbox. The path it returns is often iCloud Drive, which this
+  /// process cannot open again (PathAccessException, errno 1). The picker
+  /// has already saved — do not write to, or even `exists()`-check, that path.
   Future<bool> savePdfToFiles(Document document) async {
     final bytes = await pdfBytesFor(document);
     final name = '${fileNameFor(document)}.pdf';
-    final savedPath = await FilePicker.saveFile(
-      dialogTitle: 'Save PDF',
-      fileName: name,
-      bytes: bytes,
-      type: FileType.custom,
-      allowedExtensions: const ['pdf'],
-    );
-    if (savedPath == null || savedPath.isEmpty) return false;
-    final file = File(savedPath);
-    if (!await file.exists() || await file.length() == 0) {
-      await file.writeAsBytes(bytes, flush: true);
+    try {
+      final savedPath = await FilePicker.saveFile(
+        dialogTitle: 'Save PDF',
+        fileName: name,
+        bytes: bytes,
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+      );
+      if (savedPath == null || savedPath.isEmpty) return false;
+      return true;
+    } catch (e) {
+      debugPrint('Save to Files: $e');
+      // Native export already copied into Files / iCloud. Opening that URL
+      // is forbidden; treating it as failure would toast the raw exception.
+      if (_pickerAlreadyExported(e)) return true;
+      await sharePdf(document);
+      return true;
     }
-    return true;
   }
+
+  /// True when the exception is the iCloud / Files destination we must not open.
+  static bool pickerAlreadyExported(Object error) =>
+      _pickerAlreadyExported(error);
 
   /// Opens the native print preview with the generated PDF.
   Future<void> printPdf(Document document) async {
@@ -132,7 +150,12 @@ class ExportService {
     final files = [
       for (final page in document.pages)
         if (File(page.path).existsSync())
-          XFile(page.path, mimeType: 'image/jpeg'),
+          XFile(
+            page.path,
+            mimeType: page.path.toLowerCase().endsWith('.png')
+                ? 'image/png'
+                : 'image/jpeg',
+          ),
     ];
     if (files.isEmpty) {
       throw StateError('This document has no pages to share.');
@@ -144,6 +167,18 @@ class ExportService {
     final cleaned = title.replaceAll(RegExp(r'[^A-Za-z0-9 _-]'), '').trim();
     return cleaned.isEmpty ? 'scan' : cleaned;
   }
+}
+
+bool _pickerAlreadyExported(Object error) {
+  final text = error.toString();
+  if (text.contains('PathAccessException') ||
+      text.contains('CloudDocs') ||
+      text.contains('Mobile Documents')) {
+    return true;
+  }
+  return error is FileSystemException &&
+      (error.osError?.errorCode == 1 ||
+          text.contains('Operation not permitted'));
 }
 
 class _SizedImage {
@@ -159,11 +194,7 @@ class _SizedImage {
 }
 
 /// Longest edge of a page embedded in a PDF.
-///
-/// Well above what any screen or printer resolves for a document, and far
-/// below the ~12MP of the original: embedding those verbatim produces PDFs
-/// tens of megabytes large that are slow to open and awkward to email.
-const _pdfMaxEdge = 2400;
+const _pdfMaxEdge = 3200;
 
 _SizedImage? _prepareForPdf(Uint8List bytes) {
   final decoded = img.decodeImage(bytes);
@@ -179,7 +210,7 @@ _SizedImage? _prepareForPdf(Uint8List bytes) {
 
   final scaled = Raster.fromImage(decoded).downscaledTo(_pdfMaxEdge);
   return _SizedImage(
-    bytes: Uint8List.fromList(img.encodeJpg(scaled.toImage(), quality: 88)),
+    bytes: Uint8List.fromList(img.encodeJpg(scaled.toImage(), quality: 98)),
     width: scaled.width,
     height: scaled.height,
   );

@@ -11,7 +11,7 @@ import 'package:scan2/features/crop/domain/perspective_transformer.dart';
 /// camera frame takes many seconds per tap, which is indistinguishable from
 /// the filter being broken. Every preview runs on this downscaled copy and
 /// only the final save touches full resolution.
-const int kPreviewMaxEdge = 1000;
+const int kPreviewMaxEdge = 1800;
 
 /// A decoded, orientation-corrected, downscaled copy of a page, reused for
 /// every preview render so a filter change never re-decodes the JPEG.

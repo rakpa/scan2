@@ -131,7 +131,17 @@ Uint8List _applyFilterIsolate(_FilterRequest request) {
 
   final raster = Raster.fromImage(img.bakeOrientation(decoded));
   final out = applyAdjustments(raster, request.adjustments);
-  return Uint8List.fromList(img.encodeJpg(out.toImage(), quality: 92));
+  return encodeScan(out, request.adjustments);
+}
+
+/// Encodes a finished page. B&W is PNG so JPEG ringing cannot blur glyph edges;
+/// everything else is high-quality 4:4:4 JPEG.
+Uint8List encodeScan(Raster raster, ScanAdjustments adjustments) {
+  final image = raster.toImage();
+  if (adjustments.filter == ScanFilter.bw) {
+    return Uint8List.fromList(img.encodePng(image));
+  }
+  return Uint8List.fromList(img.encodeJpg(image, quality: 98));
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +292,7 @@ Raster _sharpen(Raster src, {required double amount}) {
 /// the phone itself, most of the time) still binarises cleanly.
 Raster _adaptiveBlackAndWhite(Raster src) {
   final luma = src.toLuma();
-  final radius = _relativeRadius(src, 0.06, min: 4, max: 220);
+  final radius = _relativeRadius(src, 0.045, min: 4, max: 160);
   final localMean = localMeanLuma(luma, src.width, src.height, radius);
 
   final out = Raster(src.width, src.height);
@@ -304,7 +314,7 @@ Raster _adaptiveBlackAndWhite(Raster src) {
 /// clean white point, then sharpen lightly.
 Raster _autoEnhance(Raster src) {
   final luma = src.toLuma();
-  final radius = _relativeRadius(src, 0.09, min: 6, max: 260);
+  final radius = _relativeRadius(src, 0.06, min: 6, max: 180);
   final background = localMeanLuma(luma, src.width, src.height, radius);
 
   // The gain depends only on the background value, which is a byte — so all
@@ -332,7 +342,7 @@ Raster _autoEnhance(Raster src) {
   }
 
   final stretched = _stretchLevels(normalized);
-  return _sharpen(stretched, amount: 0.55);
+  return _sharpen(stretched, amount: 0.85);
 }
 
 /// Percentile-based levels stretch: pin the 2nd percentile to black and the

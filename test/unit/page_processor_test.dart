@@ -117,6 +117,21 @@ void main() {
       },
     );
 
+    test('original platform capture is not re-encoded', () async {
+      final source = File(capturePath).readAsBytesSync();
+      final result = await const PageProcessor().process(
+        imagePath: capturePath,
+        detectEdges: false,
+        applySpreadSnip: false,
+        adjustments: const ScanAdjustments(filter: ScanFilter.original),
+      );
+      expect(
+        result.bytes,
+        source,
+        reason: 'Original must keep the HD capture, not a JPEG recompress',
+      );
+    });
+
     test('a pre-cropped page is enhanced but not cropped again', () async {
       // What the platform scanner hands back: already perspective-corrected.
       // Detecting edges on it again would crop into the content.

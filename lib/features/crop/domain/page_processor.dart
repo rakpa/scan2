@@ -197,7 +197,12 @@ ProcessedCapture _processIsolate(_ProcessRequest request) {
   }
 
   return ProcessedCapture(
-    bytes: _renderRaster(source, quad, request.adjustments),
+    bytes: _renderRaster(
+      source,
+      quad,
+      request.adjustments,
+      sourceBytes: request.bytes,
+    ),
     quad: quad,
     adjustments: request.adjustments,
   );
@@ -207,20 +212,32 @@ Uint8List _renderIsolate(_ProcessRequest request) {
   final decoded = img.decodeImage(request.bytes);
   if (decoded == null) return request.bytes;
   final source = Raster.fromImage(img.bakeOrientation(decoded));
-  return _renderRaster(source, request.quad?.toQuad(), request.adjustments);
+  return _renderRaster(
+    source,
+    request.quad?.toQuad(),
+    request.adjustments,
+    sourceBytes: request.bytes,
+  );
 }
 
 Uint8List _renderRaster(
   Raster source,
   Quad? quad,
-  ScanAdjustments adjustments,
-) {
+  ScanAdjustments adjustments, {
+  Uint8List? sourceBytes,
+}) {
+  final skipWarp = quad == null || PerspectiveTransformer.isFullFrame(quad);
+  // VisionKit hands back a lossless PNG. Re-encoding Original as JPEG is
+  // a generation of blur for no gain.
+  if (skipWarp && adjustments.isNoOp && sourceBytes != null) {
+    return sourceBytes;
+  }
   var raster = source;
-  if (quad != null && !PerspectiveTransformer.isFullFrame(quad)) {
+  if (!skipWarp) {
     raster = warpRaster(raster, quad) ?? raster;
   }
   final out = applyAdjustments(raster, adjustments);
-  return Uint8List.fromList(img.encodeJpg(out.toImage(), quality: 92));
+  return encodeScan(out, adjustments);
 }
 
 /// How far inside the detected border to crop, as a fraction of page size.

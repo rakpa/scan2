@@ -78,6 +78,20 @@ void main() {
       expect(bytes.length, greaterThan(1000));
     });
 
+    test('rebuilds the PDF when the stored copy cannot be read', () async {
+      final page = writePage('ok.jpg', 400, 500);
+      final blocked = Directory('${temp.path}/not_a_pdf')..createSync();
+      final doc = Document(
+        id: 1,
+        title: 'Scan',
+        createdAt: DateTime(2026, 8, 21),
+        pages: [ScanPage(path: page)],
+        pdfPath: blocked.path,
+      );
+      final bytes = await const ExportService().pdfBytesFor(doc);
+      expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+    });
+
     test(
       'an empty document fails loudly rather than writing a blank PDF',
       () async {
@@ -99,6 +113,18 @@ void main() {
           ),
         ),
         'Invoice 1207 draft',
+      );
+    });
+
+    test('iCloud PathAccessException means the picker already saved', () {
+      final error = PathAccessException(
+        '/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Scan.pdf',
+        const OSError('Operation not permitted', 1),
+      );
+      expect(ExportService.pickerAlreadyExported(error), isTrue);
+      expect(
+        ExportService.pickerAlreadyExported(StateError('no pages')),
+        isFalse,
       );
     });
   });

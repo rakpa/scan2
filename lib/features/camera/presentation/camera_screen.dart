@@ -148,7 +148,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
 
       final controller = CameraController(
         back,
-        ResolutionPreset.veryHigh,
+        ResolutionPreset.max,
         enableAudio: false,
         imageFormatGroup: defaultTargetPlatform == TargetPlatform.iOS
             ? ImageFormatGroup.bgra8888

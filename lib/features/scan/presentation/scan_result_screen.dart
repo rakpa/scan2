@@ -142,10 +142,14 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
       final decoded = img.decodeImage(src);
       if (decoded == null) return null;
       final rotated = img.copyRotate(decoded, angle: (quarterTurns % 4) * 90);
+      final png = _isPng(src);
       final out = await File(
-        '${Directory.systemTemp.path}/scanella_rot_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        '${Directory.systemTemp.path}/scanella_rot_${DateTime.now().millisecondsSinceEpoch}${png ? '.png' : '.jpg'}',
       ).create();
-      await out.writeAsBytes(img.encodeJpg(rotated, quality: 92), flush: true);
+      await out.writeAsBytes(
+        png ? img.encodePng(rotated) : img.encodeJpg(rotated, quality: 98),
+        flush: true,
+      );
       return out.path;
     } catch (e) {
       debugPrint('Rotation bake failed: $e');
@@ -478,10 +482,14 @@ class _PageEdit {
       final decoded = img.decodeImage(src);
       if (decoded != null) {
         final rotated = img.copyRotate(decoded, angle: turns * 90);
+        final png = _isPng(src);
         final out = await File(
-          '${Directory.systemTemp.path}/scanella_save_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          '${Directory.systemTemp.path}/scanella_save_${DateTime.now().millisecondsSinceEpoch}${png ? '.png' : '.jpg'}',
         ).create();
-        await out.writeAsBytes(img.encodeJpg(rotated, quality: 92), flush: true);
+        await out.writeAsBytes(
+          png ? img.encodePng(rotated) : img.encodeJpg(rotated, quality: 98),
+          flush: true,
+        );
         path = out.path;
       }
     }
@@ -1095,3 +1103,10 @@ class _AdjustSlider extends StatelessWidget {
     );
   }
 }
+
+bool _isPng(Uint8List bytes) =>
+    bytes.length >= 4 &&
+    bytes[0] == 0x89 &&
+    bytes[1] == 0x50 &&
+    bytes[2] == 0x4E &&
+    bytes[3] == 0x47;

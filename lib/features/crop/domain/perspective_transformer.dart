@@ -169,7 +169,7 @@ Uint8List _warpIsolate(_WarpRequest request) {
   final src = Raster.fromImage(img.bakeOrientation(decoded));
   final out = warpRaster(src, request.quad.toQuad());
   if (out == null) return request.bytes;
-  return Uint8List.fromList(img.encodeJpg(out.toImage(), quality: 92));
+  return Uint8List.fromList(img.encodeJpg(out.toImage(), quality: 98));
 }
 
 /// Largest page we rasterise. Beyond this the extra pixels cost seconds and
