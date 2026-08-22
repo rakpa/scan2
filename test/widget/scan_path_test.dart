@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:scan2/core/theme/app_theme.dart';
+import 'package:scan2/features/camera/domain/native_document_scanner.dart';
 import 'package:scan2/features/camera/presentation/camera_screen.dart';
 import 'package:scan2/features/camera/presentation/native_scan_screen.dart';
 import 'package:scan2/features/settings/presentation/settings_screen.dart';
@@ -20,11 +23,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const ProviderScope(
-        child: MaterialApp(
-          home: SettingsScreen(),
-        ),
-      ),
+      const ProviderScope(child: MaterialApp(home: SettingsScreen())),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
@@ -59,7 +58,7 @@ void main() {
                   final inApp = container.read(settingsProvider).useInAppCamera;
                   return inApp
                       ? const CameraScreen()
-                      : const NativeScanScreen();
+                      : NativeScanScreen(scanner: _IdleScanner());
                 },
               ),
               GoRoute(
@@ -77,4 +76,10 @@ void main() {
     expect(find.byType(NativeScanScreen), findsOneWidget);
     expect(find.byType(CameraScreen), findsNothing);
   });
+}
+
+class _IdleScanner extends NativeDocumentScanner {
+  @override
+  Future<List<String>?> scan({int maxPages = 24}) =>
+      Completer<List<String>?>().future;
 }

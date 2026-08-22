@@ -61,10 +61,10 @@ code at different resolutions:
 | Filter | What it does |
 | --- | --- |
 | Original | Untouched |
-| Auto | Divides out a blurred estimate of the lighting, stretches levels onto a clean white point, sharpens lightly |
+| Auto Enhance | Neutralizes paper colour, divides out a blurred lighting estimate, stretches luma onto a clean white point, sharpens lightly |
 | Grayscale | Rec. 601 luma |
 | B&W | Adaptive local threshold — a global cutoff loses either the ink or the paper on an unevenly lit page |
-| Sharpness | Unsharp mask driven by the luma channel |
+| Magic Color | Milder lighting flatten and white-balance, a touch of saturation, then sharpen |
 
 Interactive previews run on a decoded, downscaled raster held in memory
 (`scan_preview.dart`); only Save touches full resolution. Filtering a 12MP

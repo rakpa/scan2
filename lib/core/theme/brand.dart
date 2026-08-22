@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
+import 'package:scan2/core/theme/tactile.dart';
+import 'package:scan2/core/widgets/pressable_scale.dart';
 
 /// Design tokens taken from the Scanella mockups.
 ///
@@ -268,43 +271,50 @@ class BrandButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: Brand.buttonHeight,
-      child: FilledButton(
-        onPressed: busy ? null : onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: Brand.blue,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: Brand.blue.withValues(alpha: 0.45),
-          disabledForegroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Brand.radiusButton),
+    final radius = BorderRadius.circular(Brand.radiusButton);
+    return PressableScale(
+      onPressed: busy ? null : onPressed,
+      enabled: !busy && onPressed != null,
+      haptic: AppHaptic.impactMedium,
+      scale: Tactile.pressScalePrimary,
+      borderRadius: radius,
+      child: SizedBox(
+        width: double.infinity,
+        height: Brand.buttonHeight,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Brand.blue.withValues(alpha: busy ? 0.45 : 1),
+            borderRadius: radius,
+          ),
+          child: Center(
+            child: busy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: Colors.white,
+                    ),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        label,
+                        style: BrandType.button.copyWith(color: Colors.white),
+                      ),
+                      if (showArrow) ...[
+                        const SizedBox(width: 10),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 21,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ],
+                  ),
           ),
         ),
-        child: busy
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.4,
-                  color: Colors.white,
-                ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    label,
-                    style: BrandType.button.copyWith(color: Colors.white),
-                  ),
-                  if (showArrow) ...[
-                    const SizedBox(width: 10),
-                    const Icon(Icons.arrow_forward_rounded, size: 21),
-                  ],
-                ],
-              ),
       ),
     );
   }

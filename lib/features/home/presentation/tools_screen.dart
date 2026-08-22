@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/core/theme/tactile.dart';
+import 'package:scan2/core/widgets/pressable_scale.dart';
 import 'package:scan2/features/library/domain/gallery_import.dart';
 import 'package:scan2/features/ocr/presentation/ocr_flow.dart';
 
@@ -81,14 +84,17 @@ class _ToolTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(18);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Brand.surface,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
+      child: PressableScale(
+        onPressed: onTap,
+        haptic: AppHaptic.impactLight,
+        scale: Tactile.pressScaleCard,
+        borderRadius: radius,
+        child: Material(
+          color: Brand.surface,
+          borderRadius: radius,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(

@@ -30,5 +30,6 @@ void main() {
     expect(find.text('OCR Text'), findsOneWidget);
     expect(find.text('Import Files'), findsOneWidget);
     expect(find.text('Recent Documents'), findsOneWidget);
+    expect(find.text('Scan first page'), findsOneWidget);
   });
 }

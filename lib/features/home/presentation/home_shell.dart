@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/core/theme/tactile.dart';
+import 'package:scan2/core/widgets/pressable_scale.dart';
 import 'package:scan2/features/home/presentation/home_screen.dart';
 import 'package:scan2/features/home/presentation/tools_screen.dart';
 import 'package:scan2/features/library/presentation/documents_view.dart';
@@ -28,6 +31,12 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late int _tab = widget.initialTab;
+
+  @override
+  void initState() {
+    super.initState();
+    AppHaptics.prepare();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -189,17 +198,22 @@ class _DrawerItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: selected ? Brand.blue : Brand.ink),
-      title: Text(
-        label,
-        style: BrandType.title.copyWith(
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          color: selected ? Brand.blue : Brand.ink,
+    return PressableScale(
+      onPressed: onTap,
+      haptic: AppHaptic.selection,
+      scale: Tactile.pressScaleCard,
+      overlay: true,
+      child: ListTile(
+        leading: Icon(icon, color: selected ? Brand.blue : Brand.ink),
+        title: Text(
+          label,
+          style: BrandType.title.copyWith(
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? Brand.blue : Brand.ink,
+          ),
         ),
+        selected: selected,
       ),
-      selected: selected,
-      onTap: onTap,
     );
   }
 }
@@ -211,37 +225,37 @@ class _ScanButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 64,
-      height: 64,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF4C7CFF), Brand.blue],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Brand.blue.withValues(alpha: 0.30),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+    return PressableScale(
+      onPressed: onPressed,
+      haptic: AppHaptic.impactMedium,
+      scale: Tactile.pressScaleFab,
+      overlay: true,
+      borderRadius: BorderRadius.circular(32),
+      tooltip: 'Scan',
+      child: SizedBox(
+        width: 64,
+        height: 64,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF4C7CFF), Brand.blue],
             ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onPressed,
-            child: const Center(
-              child: Icon(
-                Icons.photo_camera_rounded,
-                size: 28,
-                color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Brand.blue.withValues(alpha: 0.30),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
+            ],
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.photo_camera_rounded,
+              size: 28,
+              color: Colors.white,
             ),
           ),
         ),
@@ -269,12 +283,20 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = selected ? Brand.blue : Brand.grey;
 
-    return InkWell(
-      onTap: onTap,
+    return PressableScale(
+      onPressed: onTap,
+      haptic: AppHaptic.selection,
+      scale: Tactile.pressScaleIcon,
+      overlay: true,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(selected ? activeIcon : icon, size: 23, color: color),
+          AnimatedSlide(
+            offset: selected ? const Offset(0, -0.08) : Offset.zero,
+            duration: Tactile.pressInDuration,
+            curve: Curves.easeOut,
+            child: Icon(selected ? activeIcon : icon, size: 23, color: color),
+          ),
           const SizedBox(height: 3),
           Text(
             label,

@@ -6,7 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/core/theme/tactile.dart';
+import 'package:scan2/core/widgets/pressable_scale.dart';
 import 'package:scan2/features/camera/domain/native_document_scanner.dart';
 import 'package:scan2/features/library/domain/gallery_import.dart';
 import 'package:scan2/features/ocr/domain/ocr_args.dart';
@@ -224,20 +227,25 @@ class _OcrSourceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
+    return PressableScale(
+      onPressed: () => Navigator.pop(context, value),
+      haptic: AppHaptic.selection,
+      scale: Tactile.pressScaleCard,
+      overlay: true,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color),
         ),
-        child: Icon(icon, color: color),
+        title: Text(title, style: BrandType.title),
+        subtitle: Text(subtitle, style: BrandType.caption),
       ),
-      title: Text(title, style: BrandType.title),
-      subtitle: Text(subtitle, style: BrandType.caption),
-      onTap: () => Navigator.pop(context, value),
     );
   }
 }

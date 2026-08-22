@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:scan2/core/permissions/camera_permission.dart';
 import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/camera/domain/native_document_scanner.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
@@ -26,14 +27,18 @@ import 'package:scan2/features/shared/providers/settings_provider.dart';
 /// Pages come back already perspective-corrected, so they are enhanced and
 /// then opened on the scan-result editor rather than filed immediately.
 class NativeScanScreen extends ConsumerStatefulWidget {
-  const NativeScanScreen({super.key});
+  const NativeScanScreen({
+    super.key,
+    this.scanner = const NativeDocumentScanner(),
+  });
+
+  final NativeDocumentScanner scanner;
 
   @override
   ConsumerState<NativeScanScreen> createState() => _NativeScanScreenState();
 }
 
 class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
-  static const _scanner = NativeDocumentScanner();
   static const _processor = PageProcessor();
 
   String _status = 'Opening scanner…';
@@ -56,7 +61,7 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
     }
 
     try {
-      final pages = await _scanner.scan();
+      final pages = await widget.scanner.scan();
 
       // Cancelled from inside the system scanner.
       if (pages == null || pages.isEmpty) {
@@ -87,7 +92,7 @@ class _NativeScanScreenState extends ConsumerState<NativeScanScreen> {
       goToScanResult(context, processed);
     } catch (e) {
       debugPrint('Scan failed: $e');
-      if (mounted) setState(() => _error = '$e');
+      if (mounted) setState(() => _error = CameraPermission.describeError(e));
     }
   }
 

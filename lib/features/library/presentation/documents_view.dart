@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/core/theme/tactile.dart';
 import 'package:scan2/core/widgets/page_thumbnail.dart';
+import 'package:scan2/core/widgets/pressable_scale.dart';
 import 'package:scan2/features/library/data/document_store.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/document_folder.dart';
@@ -733,28 +736,28 @@ class _TopBar extends StatelessWidget {
               child: ScanellaWordmark(fontSize: 22, color: Brand.blue),
             ),
           ),
-          IconButton(
+          TactileIconButton(
             tooltip: 'Search',
             onPressed: onSearch,
-            icon: Icon(
-              searchOpen ? Icons.close_rounded : Icons.search_rounded,
-              color: Brand.ink,
-            ),
+            icon: searchOpen ? Icons.close_rounded : Icons.search_rounded,
+            color: Brand.ink,
           ),
           Tooltip(
             message: gridView ? 'Show as list' : 'Show as grid',
-            child: Material(
-              color: Brand.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-                side: const BorderSide(color: Brand.outline),
-              ),
-              child: InkWell(
-                onTap: onToggleLayout,
-                borderRadius: BorderRadius.circular(10),
+            child: PressableScale(
+              onPressed: onToggleLayout,
+              haptic: AppHaptic.selection,
+              scale: Tactile.pressScaleIcon,
+              borderRadius: BorderRadius.circular(10),
+              child: Material(
+                color: Brand.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: Brand.outline),
+                ),
                 child: SizedBox(
-                  width: 40,
-                  height: 40,
+                  width: 44,
+                  height: 44,
                   child: Icon(
                     gridView
                         ? Icons.view_list_rounded
@@ -767,19 +770,19 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          Material(
-            color: Brand.blue,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: onAdd,
-              child: const Tooltip(
-                message: 'Add',
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Icon(Icons.add_rounded, color: Colors.white, size: 24),
-                ),
+          PressableScale(
+            onPressed: onAdd,
+            haptic: AppHaptic.impactMedium,
+            scale: Tactile.pressScaleIcon,
+            borderRadius: BorderRadius.circular(22),
+            tooltip: 'Add',
+            child: const Material(
+              color: Brand.blue,
+              shape: CircleBorder(),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Icon(Icons.add_rounded, color: Colors.white, size: 24),
               ),
             ),
           ),
@@ -865,14 +868,17 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected ? Brand.blue : Brand.surface,
-      shape: StadiumBorder(
-        side: BorderSide(color: selected ? Brand.blue : Brand.outline),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const StadiumBorder(),
+    return PressableScale(
+      onPressed: onTap,
+      haptic: AppHaptic.selection,
+      scale: Tactile.pressScaleCard,
+      hapticOnDown: false,
+      borderRadius: BorderRadius.circular(22),
+      child: Material(
+        color: selected ? Brand.blue : Brand.surface,
+        shape: StadiumBorder(
+          side: BorderSide(color: selected ? Brand.blue : Brand.outline),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Row(
@@ -988,11 +994,14 @@ class _DocumentListCard extends StatelessWidget {
         '${DateFormat.yMMMd().format(document.createdAt)}  •  '
         '$pages Page${pages == 1 ? '' : 's'}  •  ${document.formattedSize}';
 
-    return Material(
-      color: Brand.surface,
+    return PressableScale(
+      onPressed: onTap,
+      haptic: AppHaptic.selection,
+      scale: Tactile.pressScaleCard,
+      hapticOnDown: false,
       borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
+      child: Material(
+        color: Brand.surface,
         borderRadius: BorderRadius.circular(18),
         child: Ink(
           decoration: BoxDecoration(
@@ -1057,26 +1066,23 @@ class _DocumentListCard extends StatelessWidget {
                 ),
                 Column(
                   children: [
-                    IconButton(
+                    TactileIconButton(
                       tooltip: 'More',
                       onPressed: onMore,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.more_horiz_rounded, color: Brand.ink),
+                      icon: Icons.more_horiz_rounded,
+                      color: Brand.ink,
                     ),
-                    IconButton(
+                    TactileIconButton(
                       tooltip: document.favorited
                           ? 'Remove from favorites'
                           : 'Favorite',
                       onPressed: onFavorite,
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(
-                        document.favorited
-                            ? Icons.star_rounded
-                            : Icons.star_border_rounded,
-                        color: document.favorited
-                            ? const Color(0xFFF5B301)
-                            : Brand.grey,
-                      ),
+                      icon: document.favorited
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      color: document.favorited
+                          ? const Color(0xFFF5B301)
+                          : Brand.grey,
                     ),
                   ],
                 ),
@@ -1108,8 +1114,12 @@ class _DocumentGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
+    return PressableScale(
+      onPressed: onTap,
+      haptic: AppHaptic.selection,
+      scale: Tactile.pressScaleCard,
+      hapticOnDown: false,
+      borderRadius: BorderRadius.circular(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1138,26 +1148,25 @@ class _DocumentGridCard extends StatelessWidget {
                 Positioned(
                   top: 4,
                   right: 4,
-                  child: IconButton(
+                  child: TactileIconButton(
                     tooltip: 'More',
                     onPressed: onMore,
-                    icon: const Icon(Icons.more_horiz_rounded, color: Brand.ink),
+                    icon: Icons.more_horiz_rounded,
+                    color: Brand.ink,
                   ),
                 ),
                 Positioned(
                   right: 4,
                   bottom: 4,
-                  child: IconButton(
+                  child: TactileIconButton(
                     tooltip: 'Favorite',
                     onPressed: onFavorite,
-                    icon: Icon(
-                      document.favorited
-                          ? Icons.star_rounded
-                          : Icons.star_border_rounded,
-                      color: document.favorited
-                          ? const Color(0xFFF5B301)
-                          : Colors.white,
-                    ),
+                    icon: document.favorited
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    color: document.favorited
+                        ? const Color(0xFFF5B301)
+                        : Colors.white,
                   ),
                 ),
               ],

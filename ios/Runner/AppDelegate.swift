@@ -13,8 +13,58 @@ import Vision
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "ScanellaOcr")!
-    ScanellaOcrPlugin.register(with: registrar)
+    let ocr = engineBridge.pluginRegistry.registrar(forPlugin: "ScanellaOcr")!
+    ScanellaOcrPlugin.register(with: ocr)
+    let haptics = engineBridge.pluginRegistry.registrar(forPlugin: "ScanellaHaptics")!
+    ScanellaHapticsPlugin.register(with: haptics)
+  }
+}
+
+private enum ScanellaHapticsPlugin {
+  static func register(with registrar: FlutterPluginRegistrar) {
+    let channel = FlutterMethodChannel(
+      name: "scanella/haptics",
+      binaryMessenger: registrar.messenger()
+    )
+    channel.setMethodCallHandler { call, result in
+      DispatchQueue.main.async {
+        switch call.method {
+        case "prepare":
+          UISelectionFeedbackGenerator().prepare()
+          UIImpactFeedbackGenerator(style: .light).prepare()
+          UIImpactFeedbackGenerator(style: .medium).prepare()
+          UINotificationFeedbackGenerator().prepare()
+          result(nil)
+        case "selection":
+          let generator = UISelectionFeedbackGenerator()
+          generator.prepare()
+          generator.selectionChanged()
+          result(nil)
+        case "impactLight":
+          let generator = UIImpactFeedbackGenerator(style: .light)
+          generator.prepare()
+          generator.impactOccurred()
+          result(nil)
+        case "impactMedium":
+          let generator = UIImpactFeedbackGenerator(style: .medium)
+          generator.prepare()
+          generator.impactOccurred()
+          result(nil)
+        case "success":
+          let generator = UINotificationFeedbackGenerator()
+          generator.prepare()
+          generator.notificationOccurred(.success)
+          result(nil)
+        case "error":
+          let generator = UINotificationFeedbackGenerator()
+          generator.prepare()
+          generator.notificationOccurred(.error)
+          result(nil)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+    }
   }
 }
 

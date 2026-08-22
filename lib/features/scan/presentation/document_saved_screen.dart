@@ -4,8 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/core/theme/tactile.dart';
 import 'package:scan2/core/widgets/page_thumbnail.dart';
+import 'package:scan2/core/widgets/pressable_scale.dart';
 import 'package:scan2/features/library/data/document_store.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/document_folder.dart';
@@ -29,6 +32,12 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
 
   bool _busy = false;
   String _busyLabel = '';
+
+  @override
+  void initState() {
+    super.initState();
+    AppHaptics.prepare();
+  }
 
   DocumentStore? get _store {
     final repo = ref.read(documentRepositoryProvider);
@@ -103,22 +112,29 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
                         ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                          child: SizedBox(
-                            width: double.infinity,
-                            height: 56,
-                            child: FilledButton(
-                              onPressed: () => _goDocuments(document.id),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Brand.blue,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
+                          child: PressableScale(
+                            onPressed: () => _goDocuments(document.id),
+                            haptic: AppHaptic.impactMedium,
+                            scale: Tactile.pressScalePrimary,
+                            borderRadius: BorderRadius.circular(16),
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: 56,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: Brand.blue,
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                textStyle: BrandType.button.copyWith(
-                                  fontSize: 17,
+                                child: Center(
+                                  child: Text(
+                                    'View in Documents',
+                                    style: BrandType.button.copyWith(
+                                      fontSize: 17,
+                                      color: Colors.white,
+                                    ),
+                                  ),
                                 ),
                               ),
-                              child: const Text('View in Documents'),
                             ),
                           ),
                         ),
@@ -186,6 +202,7 @@ class _DocumentSavedScreenState extends ConsumerState<DocumentSavedScreen> {
     try {
       await action();
     } catch (e) {
+      await AppHaptics.error();
       if (mounted) _toast(_readable(e));
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -458,26 +475,25 @@ class _TopBar extends StatelessWidget {
         height: 48,
         child: Row(
           children: [
-            IconButton(
+            TactileIconButton(
               tooltip: 'Back',
               onPressed: onBack,
-              icon: const Icon(Icons.chevron_left_rounded, size: 32),
+              icon: Icons.chevron_left_rounded,
               color: Brand.blue,
+              size: 32,
             ),
             const Expanded(
               child: Center(
                 child: ScanellaWordmark(fontSize: 22, color: Brand.blue),
               ),
             ),
-            TextButton(
+            TactileTextButton(
               onPressed: onDone,
-              child: Text(
-                'Done',
-                style: BrandType.button.copyWith(
-                  color: Brand.blue,
-                  fontSize: 16,
-                ),
+              style: BrandType.button.copyWith(
+                color: Brand.blue,
+                fontSize: 16,
               ),
+              label: 'Done',
             ),
           ],
         ),
@@ -514,11 +530,6 @@ class _SuccessCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Document Saved!', style: BrandType.title),
-                SizedBox(height: 4),
-                Text(
-                  'Your document has been saved successfully.',
-                  style: BrandType.caption,
-                ),
               ],
             ),
           ),
@@ -581,22 +592,25 @@ class _InfoCard extends StatelessWidget {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(
-                        document.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: BrandType.title,
+                      child: PressableScale(
+                        onPressed: onRename,
+                        haptic: AppHaptic.selection,
+                        scale: Tactile.pressScaleIcon,
+                        overlay: false,
+                        child: Text(
+                          document.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: BrandType.title,
+                        ),
                       ),
                     ),
-                    IconButton(
+                    TactileIconButton(
                       tooltip: 'Rename',
                       onPressed: onRename,
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(
-                        Icons.edit_outlined,
-                        size: 18,
-                        color: Brand.blue,
-                      ),
+                      icon: Icons.edit_outlined,
+                      color: Brand.blue,
+                      size: 18,
                     ),
                   ],
                 ),
@@ -604,10 +618,11 @@ class _InfoCard extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
+          TactileIconButton(
             tooltip: 'More',
             onPressed: onMore,
-            icon: const Icon(Icons.more_horiz_rounded, color: Brand.ink),
+            icon: Icons.more_horiz_rounded,
+            color: Brand.ink,
           ),
         ],
       ),
@@ -762,18 +777,21 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(14);
     return Expanded(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Material(
-          color: Brand.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: Brand.outline),
-          ),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
+        child: PressableScale(
+          onPressed: onTap,
+          haptic: AppHaptic.impactLight,
+          scale: Tactile.pressScaleCard,
+          borderRadius: radius,
+          child: Material(
+            color: Brand.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: const BorderSide(color: Brand.outline),
+            ),
             child: SizedBox(
               height: 78,
               child: Column(
@@ -839,12 +857,10 @@ class _LocationRow extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(
+          TactileTextButton(
             onPressed: onChange,
-            child: Text(
-              'Change',
-              style: BrandType.link.copyWith(fontWeight: FontWeight.w700),
-            ),
+            style: BrandType.link.copyWith(fontWeight: FontWeight.w700),
+            label: 'Change',
           ),
         ],
       ),
