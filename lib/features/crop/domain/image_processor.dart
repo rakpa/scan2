@@ -107,13 +107,13 @@ class ImageProcessor {
       case ScanFilter.original:
         return 'Original';
       case ScanFilter.magic:
-        return 'Auto';
+        return 'Auto Enhance';
       case ScanFilter.grayscale:
         return 'Grayscale';
       case ScanFilter.bw:
         return 'B&W';
       case ScanFilter.enhance:
-        return 'Sharpness';
+        return 'Magic Color';
     }
   }
 }
@@ -168,7 +168,7 @@ Raster applyAdjustments(Raster src, ScanAdjustments adjustments) {
     case ScanFilter.magic:
       out = _autoEnhance(out);
     case ScanFilter.enhance:
-      out = _sharpen(out, amount: 1.1);
+      out = _magicColor(out);
   }
 
   if (adjustments.sharpness.abs() >= 0.001) {
@@ -296,10 +296,10 @@ Raster _adaptiveBlackAndWhite(Raster src) {
   final out = Raster(src.width, src.height);
   var i = 0;
   for (var p = 0; p < luma.length; p++) {
-    // 12% below the local mean marks ink; the small absolute floor keeps
-    // flat paper from turning into noise where the local mean is the pixel.
-    final cutoff = localMean[p] * 0.88;
-    final v = luma[p] < cutoff - 2 ? 0 : 255;
+    // Ink is anything clearly below the local paper. 10% (not 12% plus a
+    // further -2) still keeps paper white on a gradient while holding
+    // faint pencil and planner ruling that the older cutoff bleached away.
+    final v = luma[p] < localMean[p] * 0.90 ? 0 : 255;
     out.pixels[i++] = v;
     out.pixels[i++] = v;
     out.pixels[i++] = v;
@@ -307,28 +307,69 @@ Raster _adaptiveBlackAndWhite(Raster src) {
   return out;
 }
 
-/// The "scanned page" look: flatten uneven lighting by dividing out a
-/// heavily blurred estimate of the background, stretch what is left onto a
-/// clean white point, then sharpen lightly.
+/// Clean scanned page: neutralize paper, flatten lighting, gentle luma
+/// contrast, light sharpen.
+///
+/// White-balance runs *before* the lighting flatten. Multiplying a cream
+/// page by a luma gain first clips red and leaves blue behind — which is
+/// how Auto Enhance used to cook notebooks orange. Levels are luma-only
+/// for the same reason: stretching R/G/B independently reintroduces the tint.
 Raster _autoEnhance(Raster src) {
+  final balanced = _whiteBalancePaper(src, strength: 1);
+  final flattened = _flattenLighting(
+    balanced,
+    targetPaper: 242,
+    maxGainQ8: 563, // 2.2×
+    radiusFraction: 0.08,
+  );
+  final contrasted = _stretchLuma(
+    flattened,
+    lowPct: 0.008,
+    highPct: 0.995,
+    mapLow: 18,
+    mapHigh: 246,
+  );
+  return _sharpen(contrasted, amount: 0.35);
+}
+
+/// Colour document mode: keep more of the original paper warmth than Auto
+/// Enhance, lift shadows gently, a touch of saturation for diagrams, then
+/// sharpen. Not a second copy of Auto Enhance.
+Raster _magicColor(Raster src) {
+  final balanced = _whiteBalancePaper(src, strength: 0.45);
+  final flattened = _flattenLighting(
+    balanced,
+    targetPaper: 232,
+    maxGainQ8: 410, // 1.6×
+    radiusFraction: 0.07,
+  );
+  final sat = _applySaturation(flattened, 0.05);
+  return _sharpen(sat, amount: 0.45);
+}
+
+/// Divide out a blurred estimate of the page lighting so shadows lift without
+/// exploding dark regions (gain is capped).
+Raster _flattenLighting(
+  Raster src, {
+  required int targetPaper,
+  required int maxGainQ8,
+  required double radiusFraction,
+}) {
   final luma = src.toLuma();
-  final radius = _relativeRadius(src, 0.06, min: 6, max: 180);
+  final radius = _relativeRadius(src, radiusFraction, min: 8, max: 220);
   final background = localMeanLuma(luma, src.width, src.height, radius);
 
-  // The gain depends only on the background value, which is a byte — so all
-  // 256 possible gains are precomputed once as fixed point rather than doing
-  // a floating-point divide per pixel.
   final gainQ8 = Int32List(256);
   for (var v = 0; v < 256; v++) {
-    gainQ8[v] = (235 * 256) ~/ math.max(v, 1);
+    final g = (targetPaper * 256) ~/ math.max(v, 8);
+    gainQ8[v] = g.clamp(200, maxGainQ8);
   }
 
-  final normalized = Raster(src.width, src.height);
-  final dst = normalized.pixels;
+  final out = Raster(src.width, src.height);
+  final dst = out.pixels;
   final srcPixels = src.pixels;
   var i = 0;
   for (var p = 0; p < luma.length; p++) {
-    // Ratio of pixel to local paper brightness, mapped so paper lands at 235.
     final gain = gainQ8[background[p]];
     final r = (srcPixels[i] * gain) >> 8;
     final g = (srcPixels[i + 1] * gain) >> 8;
@@ -338,54 +379,110 @@ Raster _autoEnhance(Raster src) {
     dst[i + 2] = b > 255 ? 255 : b;
     i += 3;
   }
-
-  final stretched = _stretchLevels(normalized);
-  return _sharpen(stretched, amount: 0.85);
+  return out;
 }
 
-/// Percentile-based levels stretch: pin the 2nd percentile to black and the
-/// 98th to white so faint pencil and grey scans gain real contrast without
-/// letting a single specular highlight define the white point.
-Raster _stretchLevels(Raster src) {
+/// Scale channels so the brightest paper pixels are near-neutral white.
+/// Cream / yellow paper was surviving illumination flatten and then getting
+/// amplified by a per-channel levels stretch.
+Raster _whiteBalancePaper(Raster src, {double strength = 1}) {
   final luma = src.toLuma();
   final histogram = Int32List(256);
   for (final v in luma) {
     histogram[v]++;
   }
-
-  final total = luma.length;
-  final lowTarget = (total * 0.02).round();
-  final highTarget = (total * 0.98).round();
-
-  var low = 0;
-  var high = 255;
-  var running = 0;
-  for (var v = 0; v < 256; v++) {
-    running += histogram[v];
-    if (running >= lowTarget) {
-      low = v;
-      break;
+  final cutoff = _histogramPercentile(histogram, luma.length, 0.70);
+  var sumR = 0;
+  var sumG = 0;
+  var sumB = 0;
+  var n = 0;
+  var i = 0;
+  for (var p = 0; p < luma.length; p++) {
+    if (luma[p] >= cutoff) {
+      sumR += src.pixels[i];
+      sumG += src.pixels[i + 1];
+      sumB += src.pixels[i + 2];
+      n++;
     }
+    i += 3;
   }
-  running = 0;
-  for (var v = 0; v < 256; v++) {
-    running += histogram[v];
-    if (running >= highTarget) {
-      high = v;
-      break;
-    }
+  if (n < 16) return src;
+
+  final meanR = sumR / n;
+  final meanG = sumG / n;
+  final meanB = sumB / n;
+  final paper = math.max(meanR, math.max(meanG, meanB));
+  if (paper < 8) return src;
+
+  var sR = 1 + ((paper / math.max(meanR, 1)) - 1) * strength;
+  var sG = 1 + ((paper / math.max(meanG, 1)) - 1) * strength;
+  var sB = 1 + ((paper / math.max(meanB, 1)) - 1) * strength;
+  sR = sR.clamp(0.72, 1.55);
+  sG = sG.clamp(0.72, 1.55);
+  sB = sB.clamp(0.72, 1.55);
+
+  final lift = (244 / paper).clamp(1.0, 1.12);
+  sR *= lift;
+  sG *= lift;
+  sB *= lift;
+
+  final out = Raster(src.width, src.height);
+  i = 0;
+  for (var p = 0; p < luma.length; p++) {
+    out.pixels[i] = (src.pixels[i] * sR).round().clamp(0, 255);
+    out.pixels[i + 1] = (src.pixels[i + 1] * sG).round().clamp(0, 255);
+    out.pixels[i + 2] = (src.pixels[i + 2] * sB).round().clamp(0, 255);
+    i += 3;
   }
-  if (high - low < 16) return src;
+  return out;
+}
+
+/// Contrast on luma only, then add the same delta to R/G/B so chroma (and
+/// any leftover paper tint) is not independently stretched.
+Raster _stretchLuma(
+  Raster src, {
+  required double lowPct,
+  required double highPct,
+  required int mapLow,
+  required int mapHigh,
+}) {
+  final luma = src.toLuma();
+  final histogram = Int32List(256);
+  for (final v in luma) {
+    histogram[v]++;
+  }
+  final low = _histogramPercentile(histogram, luma.length, lowPct);
+  final high = _histogramPercentile(histogram, luma.length, highPct);
+  if (high - low < 24) return src;
 
   final lut = Uint8List(256);
   final span = (high - low).toDouble();
+  final mapped = (mapHigh - mapLow).toDouble();
   for (var v = 0; v < 256; v++) {
-    lut[v] = (((v - low) / span) * 255).round().clamp(0, 255);
+    lut[v] = (mapLow + ((v - low) / span) * mapped).round().clamp(0, 255);
   }
 
   final out = Raster(src.width, src.height);
-  for (var i = 0; i < src.pixels.length; i++) {
-    out.pixels[i] = lut[src.pixels[i]];
+  var i = 0;
+  for (var p = 0; p < luma.length; p++) {
+    final delta = lut[luma[p]] - luma[p];
+    var r = src.pixels[i] + delta;
+    var g = src.pixels[i + 1] + delta;
+    var b = src.pixels[i + 2] + delta;
+    out.pixels[i] = r < 0 ? 0 : (r > 255 ? 255 : r);
+    out.pixels[i + 1] = g < 0 ? 0 : (g > 255 ? 255 : g);
+    out.pixels[i + 2] = b < 0 ? 0 : (b > 255 ? 255 : b);
+    i += 3;
   }
   return out;
+}
+
+int _histogramPercentile(Int32List histogram, int total, double pct) {
+  final target = (total * pct).round().clamp(1, total);
+  var running = 0;
+  for (var v = 0; v < 256; v++) {
+    running += histogram[v];
+    if (running >= target) return v;
+  }
+  return 255;
 }
