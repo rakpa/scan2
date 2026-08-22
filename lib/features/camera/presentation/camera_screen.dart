@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:scan2/core/haptics/app_haptics.dart';
+import 'package:scan2/core/permissions/camera_permission.dart';
 import 'package:scan2/features/camera/domain/camera_frame_analyzer.dart';
 import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
@@ -127,8 +128,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     if (_controller != null || _initializing) return;
     _initializing = true;
     try {
-      final permission = await Permission.camera.request();
-      if (!permission.isGranted) {
+      final granted = await CameraPermission.ensureGranted();
+      if (!granted) {
         if (!mounted) return;
         setState(
           () =>
@@ -177,7 +178,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     } catch (e) {
       debugPrint('Camera init failed: $e');
       if (mounted) {
-        setState(() => _cameraError = 'Camera failed to start: $e');
+        setState(() => _cameraError = CameraPermission.describeError(e));
       }
     } finally {
       _initializing = false;
