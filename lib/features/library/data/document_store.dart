@@ -585,22 +585,30 @@ class DocumentStore implements DocumentRepository {
     return total;
   }
 
-  /// Meaningful local filename stem, e.g. `Scan_2024-05-18`.
+  /// Human local filename, e.g. `Friday scan`.
   Future<String> nextScanTitle([DateTime? now]) async {
     await ensureLoaded();
     return scanFileTitle(now ?? DateTime.now(), _documents.map((d) => d.title));
   }
 
   static String scanFileTitle(DateTime now, Iterable<String> existing) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    final base = 'Scan_${now.year}-${two(now.month)}-${two(now.day)}';
+    const weekdays = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    final base = '${weekdays[now.weekday - 1]} scan';
     final used = existing.toSet();
     if (!used.contains(base)) return base;
     var n = 2;
-    while (used.contains('${base}_$n')) {
+    while (used.contains('$base $n')) {
       n++;
     }
-    return '${base}_$n';
+    return '$base $n';
   }
 
   Future<ScanPage> _writeProcessedPage(

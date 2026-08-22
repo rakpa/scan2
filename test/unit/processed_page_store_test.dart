@@ -213,7 +213,8 @@ void main() {
       pages: [processed(capture('a.jpg', 1), 200)],
     );
     expect(doc.documentType, 'Image');
-    expect(doc.title, startsWith('Scan_'));
+    expect(doc.title, isNot(startsWith('Scan_')));
+    expect(doc.title.toLowerCase(), contains('scan'));
 
     final withPdf = await store.attachPdf(
       documentId: doc.id,
@@ -235,15 +236,15 @@ void main() {
     expect(reopened.fileSizeBytes, withPdf.fileSizeBytes);
   });
 
-  test('scan titles disambiguate on the same day', () async {
+  test('scan titles disambiguate on the same weekday', () async {
     final store = newStore();
-    final day = DateTime(2024, 5, 18);
-    expect(await store.nextScanTitle(day), 'Scan_2024-05-18');
+    final day = DateTime(2024, 5, 18); // Saturday
+    expect(await store.nextScanTitle(day), 'Saturday scan');
     await store.createProcessedDocument(
       pages: [processed(capture('a.jpg', 1), 200)],
-      title: 'Scan_2024-05-18',
+      title: 'Saturday scan',
     );
-    expect(await store.nextScanTitle(day), 'Scan_2024-05-18_2');
+    expect(await store.nextScanTitle(day), 'Saturday scan 2');
   });
 
   test('new scans land in Invoices and can move folders', () async {

@@ -64,7 +64,7 @@ void main() {
     expect(find.text('Document Saved!'), findsOneWidget);
     expect(
       find.text('Your document has been saved successfully.'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Invoice_2024-05-18'), findsOneWidget);
     expect(find.textContaining('May 18, 2024'), findsOneWidget);

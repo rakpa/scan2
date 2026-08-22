@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/core/theme/brand.dart';
 import 'package:scan2/features/library/data/document_store.dart';
 import 'package:scan2/features/ocr/domain/ocr_args.dart';
@@ -52,6 +53,7 @@ class _OcrResultScreenState extends ConsumerState<OcrResultScreen> {
       return;
     }
     await Clipboard.setData(ClipboardData(text: text));
+    await AppHaptics.success();
     if (!mounted) return;
     _toast('Copied to clipboard');
   }

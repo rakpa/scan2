@@ -5,7 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as img;
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/core/theme/tactile.dart';
+import 'package:scan2/core/widgets/pressable_scale.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
 import 'package:scan2/features/crop/domain/crop_args.dart';
 import 'package:scan2/features/crop/domain/image_processor.dart';
@@ -98,6 +101,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
   late final List<_PageEdit> _pages;
   int _index = 0;
   bool _saving = false;
+  bool _enhanceFlash = false;
   final GlobalKey _presetsKey = GlobalKey();
 
   _PageEdit get _current => _pages[_index];
@@ -106,6 +110,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
   void initState() {
     super.initState();
     _pages = widget.args.pages.map(_PageEdit.fromDraft).toList();
+    AppHaptics.prepare();
   }
 
   Future<void> _crop() async {
@@ -252,12 +257,27 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
 
   Future<void> _selectPreset(_EnhancePreset preset) async {
     final page = _current;
-    if (page.preset == preset) return;
-    page.preset = preset;
-    page.adjustments = page.adjustments.copyWith(filter: preset.filter);
-    page.invalidateThumbs();
-    setState(() {});
-    await _rerender(page);
+    final changed = page.preset != preset;
+    if (changed) {
+      page.preset = preset;
+      page.adjustments = page.adjustments.copyWith(filter: preset.filter);
+      page.invalidateThumbs();
+      setState(() {});
+    }
+    if (preset == _EnhancePreset.autoEnhance && changed) {
+      AppHaptics.success();
+      _flashEnhance();
+    } else {
+      AppHaptics.selection();
+    }
+    if (changed) await _rerender(page);
+  }
+
+  void _flashEnhance() {
+    setState(() => _enhanceFlash = true);
+    Future<void>.delayed(const Duration(milliseconds: 90), () {
+      if (mounted) setState(() => _enhanceFlash = false);
+    });
   }
 
   Future<void> _rerender(_PageEdit page) async {
@@ -356,7 +376,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
         debugPrint('Local PDF generation failed, keeping image pages: $e');
       }
       bumpLibrary(ref);
-      HapticFeedback.mediumImpact();
+      await AppHaptics.success();
       if (!mounted) return;
       if (existingId != null) {
         context.go('/library/document/${doc.id}');
@@ -365,6 +385,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
       }
     } catch (e) {
       debugPrint('Scan save failed: $e');
+      await AppHaptics.error();
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(
@@ -395,7 +416,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              _TopBar(saving: _saving, onBack: _back, onSave: _save),
+              _TopBar(onBack: _back),
               _StatusRow(
                 pageLabel: 'Page ${_index + 1} of $count',
                 onCrop: _crop,
@@ -406,6 +427,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
                   child: _DocumentCard(
                     bytes: page.previewBytes,
                     quarterTurns: page.quarterTurns,
+                    enhanceFlash: _enhanceFlash,
                   ),
                 ),
               ),
@@ -545,15 +567,9 @@ class _PageEdit {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.saving,
-    required this.onBack,
-    required this.onSave,
-  });
+  const _TopBar({required this.onBack});
 
-  final bool saving;
   final VoidCallback onBack;
-  final VoidCallback onSave;
 
   @override
   Widget build(BuildContext context) {
@@ -563,44 +579,19 @@ class _TopBar extends StatelessWidget {
         height: 48,
         child: Row(
           children: [
-            IconButton(
+            TactileIconButton(
               tooltip: 'Back',
               onPressed: onBack,
-              icon: const Icon(Icons.chevron_left_rounded, size: 32),
+              icon: Icons.chevron_left_rounded,
               color: Brand.blue,
+              size: 32,
             ),
             const Expanded(
               child: Center(
                 child: ScanellaWordmark(fontSize: 22, color: Brand.blue),
               ),
             ),
-            SizedBox(
-              height: 36,
-              child: FilledButton(
-                onPressed: saving ? null : onSave,
-                style: FilledButton.styleFrom(
-                  backgroundColor: Brand.blue,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: Brand.blue.withValues(alpha: 0.45),
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  textStyle: BrandType.button.copyWith(fontSize: 15),
-                ),
-                child: saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('Save'),
-              ),
-            ),
+            const SizedBox(width: 44),
           ],
         ),
       ),
@@ -665,11 +656,13 @@ class _StatusRow extends StatelessWidget {
                 ),
               ),
             ),
-            IconButton(
+            TactileIconButton(
               tooltip: 'Crop',
               onPressed: onCrop,
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.crop_rounded, color: Brand.blue, size: 22),
+              haptic: AppHaptic.impactLight,
+              icon: Icons.crop_rounded,
+              color: Brand.blue,
+              size: 22,
             ),
           ],
         ),
@@ -679,10 +672,15 @@ class _StatusRow extends StatelessWidget {
 }
 
 class _DocumentCard extends StatelessWidget {
-  const _DocumentCard({required this.bytes, required this.quarterTurns});
+  const _DocumentCard({
+    required this.bytes,
+    required this.quarterTurns,
+    required this.enhanceFlash,
+  });
 
   final Uint8List bytes;
   final int quarterTurns;
+  final bool enhanceFlash;
 
   @override
   Widget build(BuildContext context) {
@@ -711,14 +709,29 @@ class _DocumentCard extends StatelessWidget {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: RotatedBox(
-                      quarterTurns: quarterTurns % 4,
-                      child: Image.memory(
-                        bytes,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                        filterQuality: FilterQuality.medium,
-                      ),
+                    child: Stack(
+                      fit: StackFit.passthrough,
+                      children: [
+                        RotatedBox(
+                          quarterTurns: quarterTurns % 4,
+                          child: Image.memory(
+                            bytes,
+                            fit: BoxFit.contain,
+                            gaplessPlayback: true,
+                            filterQuality: FilterQuality.medium,
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: AnimatedOpacity(
+                              opacity: enhanceFlash ? 0.28 : 0,
+                              duration: const Duration(milliseconds: 70),
+                              curve: Curves.easeOut,
+                              child: const ColoredBox(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -749,16 +762,21 @@ class _PageDots extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          IconButton(
+          TactileIconButton(
             onPressed: index == 0 ? null : () => onChanged(index - 1),
-            icon: const Icon(Icons.chevron_left_rounded),
+            enabled: index != 0,
+            icon: Icons.chevron_left_rounded,
             color: Brand.ink,
           ),
           for (var i = 0; i < count; i++)
-            GestureDetector(
-              onTap: () => onChanged(i),
+            PressableScale(
+              onPressed: () => onChanged(i),
+              haptic: AppHaptic.selection,
+              scale: Tactile.pressScaleIcon,
+              overlay: false,
+              minSize: 24,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
+                duration: Tactile.pressInDuration,
                 width: i == index ? 18 : 8,
                 height: 8,
                 margin: const EdgeInsets.symmetric(horizontal: 3),
@@ -770,9 +788,10 @@ class _PageDots extends StatelessWidget {
                 ),
               ),
             ),
-          IconButton(
+          TactileIconButton(
             onPressed: index >= count - 1 ? null : () => onChanged(index + 1),
-            icon: const Icon(Icons.chevron_right_rounded),
+            enabled: index < count - 1,
+            icon: Icons.chevron_right_rounded,
             color: Brand.ink,
           ),
         ],
@@ -805,27 +824,32 @@ class _EditToolbar extends StatelessWidget {
           _ToolButton(
             icon: const Icon(Icons.crop_rounded),
             label: 'Crop',
+            haptic: AppHaptic.impactLight,
             onTap: onCrop,
           ),
           _ToolButton(
             icon: const Icon(Icons.rotate_right_rounded),
             label: 'Rotate',
+            haptic: AppHaptic.impactLight,
             onTap: onRotate,
           ),
           _ToolButton(
             icon: const _VennIcon(),
             label: 'Filter',
+            haptic: AppHaptic.selection,
             onTap: onFilter,
           ),
           _ToolButton(
             icon: const Icon(Icons.tune_rounded),
             label: 'Adjust',
+            haptic: AppHaptic.impactLight,
             onTap: onAdjust,
           ),
           if (onRetake != null)
             _ToolButton(
               icon: const Icon(Icons.refresh_rounded),
               label: 'Retake',
+              haptic: AppHaptic.selection,
               onTap: onRetake!,
             ),
         ],
@@ -839,26 +863,31 @@ class _ToolButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.haptic = AppHaptic.selection,
   });
 
   final Widget icon;
   final String label;
   final VoidCallback onTap;
+  final AppHaptic haptic;
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(12);
     return Expanded(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Material(
-          color: Brand.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Brand.outline),
-          ),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(12),
+        child: PressableScale(
+          onPressed: onTap,
+          haptic: haptic,
+          scale: Tactile.pressScaleIcon,
+          borderRadius: radius,
+          child: Material(
+            color: Brand.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: const BorderSide(color: Brand.outline),
+            ),
             child: SizedBox(
               height: 68,
               child: Column(
@@ -931,15 +960,20 @@ class _PresetThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(right: 12),
-      child: GestureDetector(
-        onTap: onTap,
+      child: PressableScale(
+        onPressed: onTap,
+        haptic: AppHaptic.none,
+        scale: Tactile.pressScaleCard,
+        hapticOnDown: false,
+        overlay: true,
+        borderRadius: BorderRadius.circular(10),
         child: SizedBox(
-          width: 76,
+          width: 90,
           child: Column(
             children: [
               Expanded(
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
+                  duration: Tactile.pressInDuration,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
@@ -980,15 +1014,20 @@ class _PresetThumb extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
-                preset.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: selected ? Brand.blue : Brand.grey,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  fontSize: 11,
+              SizedBox(
+                height: 16,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    preset.label,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: selected ? Brand.blue : Brand.grey,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      fontSize: 11,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1007,32 +1046,42 @@ class _SaveDocumentButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(16);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: FilledButton(
-          onPressed: saving ? null : onSave,
-          style: FilledButton.styleFrom(
-            backgroundColor: Brand.blue,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: Brand.blue.withValues(alpha: 0.45),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+      child: PressableScale(
+        onPressed: saving ? null : onSave,
+        enabled: !saving,
+        haptic: AppHaptic.impactMedium,
+        scale: Tactile.pressScalePrimary,
+        borderRadius: radius,
+        child: SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Brand.blue.withValues(alpha: saving ? 0.45 : 1),
+              borderRadius: radius,
             ),
-            textStyle: BrandType.button.copyWith(fontSize: 17),
+            child: Center(
+              child: saving
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      'Save Document',
+                      style: BrandType.button.copyWith(
+                        fontSize: 17,
+                        color: Colors.white,
+                      ),
+                    ),
+            ),
           ),
-          child: saving
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    color: Colors.white,
-                  ),
-                )
-              : const Text('Save Document'),
         ),
       ),
     );

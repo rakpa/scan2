@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/core/theme/brand.dart';
+import 'package:scan2/core/theme/tactile.dart';
 import 'package:scan2/core/widgets/illustrations.dart';
 import 'package:scan2/core/widgets/page_thumbnail.dart';
+import 'package:scan2/core/widgets/pressable_scale.dart';
 import 'package:scan2/features/library/domain/document.dart';
 import 'package:scan2/features/library/domain/gallery_import.dart';
 import 'package:scan2/features/ocr/presentation/ocr_flow.dart';
@@ -57,7 +60,11 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
             if (recent.isEmpty)
-              const SliverToBoxAdapter(child: _EmptyRecent())
+              SliverToBoxAdapter(
+                child: _EmptyRecent(
+                  onScanFirstPage: () => context.push('/camera'),
+                ),
+              )
             else
               SliverList.separated(
                 itemCount: recent.length,
@@ -86,31 +93,27 @@ class _TopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
       child: Row(
         children: [
-          IconButton(
+          TactileIconButton(
             tooltip: 'Menu',
             onPressed: onOpenMenu,
-            icon: const Icon(Icons.menu_rounded, color: Brand.ink, size: 26),
+            icon: Icons.menu_rounded,
+            color: Brand.ink,
+            size: 26,
           ),
           const Expanded(
             child: ScanellaWordmark(fontSize: BrandType.wordmarkCompact),
           ),
-          IconButton(
+          TactileIconButton(
             tooltip: 'Scanella Pro',
             onPressed: () => _pro(context),
-            icon: const Icon(
-              Icons.workspace_premium_rounded,
-              color: Color(0xFFE0A100),
-              size: 24,
-            ),
+            icon: Icons.workspace_premium_rounded,
+            color: const Color(0xFFE0A100),
           ),
-          IconButton(
+          TactileIconButton(
             tooltip: 'Notifications',
             onPressed: () => _notifications(context),
-            icon: const Icon(
-              Icons.notifications_none_rounded,
-              color: Brand.ink,
-              size: 24,
-            ),
+            icon: Icons.notifications_none_rounded,
+            color: Brand.ink,
           ),
         ],
       ),
@@ -301,12 +304,16 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: background,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+    final radius = BorderRadius.circular(20);
+    return PressableScale(
+      onPressed: onTap,
+      haptic: AppHaptic.selection,
+      scale: Tactile.pressScaleCard,
+      hapticOnDown: false,
+      borderRadius: radius,
+      child: Material(
+        color: background,
+        borderRadius: radius,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
           child: Column(
@@ -354,9 +361,10 @@ class _RecentHeader extends StatelessWidget {
           const Text('Recent Documents', style: BrandType.title),
           const Spacer(),
           if (!empty)
-            TextButton(
+            TactileTextButton(
               onPressed: onViewAll,
-              child: const Text('View All >', style: BrandType.link),
+              style: BrandType.link,
+              label: 'View All >',
             ),
         ],
       ),
@@ -365,15 +373,30 @@ class _RecentHeader extends StatelessWidget {
 }
 
 class _EmptyRecent extends StatelessWidget {
-  const _EmptyRecent();
+  const _EmptyRecent({required this.onScanFirstPage});
+
+  final VoidCallback onScanFirstPage;
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.fromLTRB(20, 8, 20, 0),
-      child: Text(
-        'Nothing scanned yet. Tap Scan Document to capture your first page.',
-        style: BrandType.subtitle,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Nothing scanned yet.', style: BrandType.subtitle),
+          const SizedBox(height: 4),
+          PressableScale(
+            onPressed: onScanFirstPage,
+            haptic: AppHaptic.selection,
+            scale: Tactile.pressScaleCard,
+            borderRadius: BorderRadius.circular(10),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Scan first page', style: BrandType.link),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -389,12 +412,17 @@ class _RecentRow extends StatelessWidget {
     final date = DateFormat.yMMMd().format(document.createdAt);
     final size = documentSizeLabel(document.pagePaths, document.pageCount);
 
-    return Material(
-      color: Brand.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: () => context.push('/library/document/${document.id}'),
-        borderRadius: BorderRadius.circular(16),
+    final open = () => context.push('/library/document/${document.id}');
+    final radius = BorderRadius.circular(16);
+    return PressableScale(
+      onPressed: open,
+      haptic: AppHaptic.selection,
+      scale: Tactile.pressScaleCard,
+      hapticOnDown: false,
+      borderRadius: radius,
+      child: Material(
+        color: Brand.surface,
+        borderRadius: radius,
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Row(
@@ -432,11 +460,11 @@ class _RecentRow extends StatelessWidget {
                   ],
                 ),
               ),
-              IconButton(
+              TactileIconButton(
                 tooltip: 'Open',
-                onPressed: () =>
-                    context.push('/library/document/${document.id}'),
-                icon: const Icon(Icons.more_vert_rounded, color: Brand.grey),
+                onPressed: open,
+                icon: Icons.more_vert_rounded,
+                color: Brand.grey,
               ),
             ],
           ),

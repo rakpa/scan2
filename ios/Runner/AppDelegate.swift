@@ -13,8 +13,56 @@ import Vision
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "ScanellaOcr")!
-    ScanellaOcrPlugin.register(with: registrar)
+    let ocr = engineBridge.pluginRegistry.registrar(forPlugin: "ScanellaOcr")!
+    ScanellaOcrPlugin.register(with: ocr)
+    let haptics = engineBridge.pluginRegistry.registrar(forPlugin: "ScanellaHaptics")!
+    ScanellaHapticsPlugin.register(with: haptics)
+  }
+}
+
+private enum ScanellaHapticsPlugin {
+  static let selection = UISelectionFeedbackGenerator()
+  static let light = UIImpactFeedbackGenerator(style: .light)
+  static let medium = UIImpactFeedbackGenerator(style: .medium)
+  static let notify = UINotificationFeedbackGenerator()
+
+  static func register(with registrar: FlutterPluginRegistrar) {
+    let channel = FlutterMethodChannel(
+      name: "scanella/haptics",
+      binaryMessenger: registrar.messenger()
+    )
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "prepare":
+        selection.prepare()
+        light.prepare()
+        medium.prepare()
+        notify.prepare()
+        result(nil)
+      case "selection":
+        selection.selectionChanged()
+        selection.prepare()
+        result(nil)
+      case "impactLight":
+        light.impactOccurred()
+        light.prepare()
+        result(nil)
+      case "impactMedium":
+        medium.impactOccurred()
+        medium.prepare()
+        result(nil)
+      case "success":
+        notify.notificationOccurred(.success)
+        notify.prepare()
+        result(nil)
+      case "error":
+        notify.notificationOccurred(.error)
+        notify.prepare()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 }
 

@@ -61,7 +61,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(ScanellaWordmark), findsOneWidget);
-    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Save'), findsNothing);
     expect(find.text('Save Document'), findsOneWidget);
     expect(find.textContaining('Auto-detect'), findsOneWidget);
     expect(find.textContaining('Page 1 of 1'), findsOneWidget);
@@ -135,7 +135,7 @@ void main() {
     await tester.tap(find.text('B&W'));
     await tester.pump();
     expect(find.text('B&W'), findsOneWidget);
-    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Save Document'), findsOneWidget);
 
     await tester.tap(find.text('Adjust'));
     await tester.pumpAndSettle();

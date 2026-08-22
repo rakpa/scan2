@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:scan2/core/haptics/app_haptics.dart';
 import 'package:scan2/features/camera/domain/camera_frame_analyzer.dart';
 import 'package:scan2/features/camera/domain/document_edge_tracker.dart';
 import 'package:scan2/features/camera/domain/quad_detector.dart';
@@ -50,6 +51,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   /// Drives the white flash played over the preview on capture.
   final ValueNotifier<double> _shutterFlash = ValueNotifier(0);
   Timer? _flashTimer;
+  bool _edgeLocked = false;
 
   @override
   void initState() {
@@ -65,6 +67,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     WidgetsBinding.instance.removeObserver(this);
     _flashTimer?.cancel();
     _shutterFlash.dispose();
+    _tracker?.state.removeListener(_onEdgeState);
     _tracker?.dispose();
     _analyzer.dispose();
     unawaited(_disposeController());
@@ -185,13 +188,25 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     // Reused across resumes: disposing one the widget tree is still listening
     // to would leave a ValueListenableBuilder bound to a dead notifier until
     // the next rebuild.
+    final created = _tracker == null;
     final tracker =
         _tracker ?? DocumentEdgeTracker(onAutoCapture: _onAutoCapture);
     _tracker = tracker;
+    if (created) {
+      tracker.state.addListener(_onEdgeState);
+    }
     tracker
       ..setAutoCapture(ref.read(settingsProvider).autoCapture)
       ..setMinAutoCaptureArea(_mode.minAutoCaptureArea)
       ..start();
+  }
+
+  void _onEdgeState() {
+    final locked = _tracker?.state.value.hasDocument ?? false;
+    if (locked && !_edgeLocked) {
+      AppHaptics.impactLight();
+    }
+    _edgeLocked = locked;
   }
 
   Future<void> _startStream() async {
@@ -311,7 +326,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
   }
 
   void _playShutter() {
-    HapticFeedback.mediumImpact();
+    AppHaptics.impactMedium();
     if (ref.read(settingsProvider).shutterSound) {
       SystemSound.play(SystemSoundType.click);
     }
@@ -333,7 +348,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen>
     try {
       await controller.setFocusPoint(point);
       await controller.setExposurePoint(point);
-      HapticFeedback.selectionClick();
+      AppHaptics.selection();
     } catch (_) {
       // Not every device exposes focus points.
     }
