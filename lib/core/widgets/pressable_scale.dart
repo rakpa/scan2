@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:scan2/core/haptics/app_haptics.dart';
@@ -7,9 +5,8 @@ import 'package:scan2/core/theme/tactile.dart';
 
 /// Instant down-state + snappy spring release for tappable controls.
 ///
-/// Scale and overlay start on pointer-down (not after [onPressed]). Sliding
-/// off, or dragging far enough to look like a scroll, springs back and does
-/// not fire the action or a leftover haptic.
+/// Scale and overlay snap on pointer-down (not after [onPressed], and not
+/// tweened in). Sliding off springs back and does not fire the action.
 class PressableScale extends StatefulWidget {
   const PressableScale({
     super.key,
@@ -46,7 +43,6 @@ class PressableScale extends StatefulWidget {
 class _PressableScaleState extends State<PressableScale>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  Timer? _hapticTimer;
   bool _held = false;
   bool _cancelled = false;
   bool _hapticPlayed = false;
@@ -62,7 +58,6 @@ class _PressableScaleState extends State<PressableScale>
 
   @override
   void dispose() {
-    _hapticTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -74,34 +69,32 @@ class _PressableScaleState extends State<PressableScale>
     return widget.scale;
   }
 
-  void _animateTo(double target, {required bool spring}) {
+  void _snapPressed() {
+    _controller.stop();
+    _controller.value = _pressedScale(context);
+  }
+
+  void _springBack() {
     _controller.stop();
     if (!mounted) return;
-    final reduce = MediaQuery.disableAnimationsOf(context);
-    if (reduce || !spring) {
-      _controller.animateTo(
-        target,
-        duration: Tactile.pressInDuration,
-        curve: Curves.easeOut,
-      );
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 1;
       return;
     }
     _controller.animateWith(
       SpringSimulation(
         Tactile.spring,
         _controller.value,
-        target,
+        1,
         _controller.velocity,
       ),
     );
   }
 
-  void _pressIn() {
-    _animateTo(_pressedScale(context), spring: false);
-  }
-
-  void _pressOut() {
-    _animateTo(1, spring: true);
+  void _playHaptic() {
+    if (_hapticPlayed || widget.haptic == AppHaptic.none) return;
+    _hapticPlayed = true;
+    AppHaptics.play(widget.haptic);
   }
 
   void _onPointerDown(PointerDownEvent event) {
@@ -110,15 +103,8 @@ class _PressableScaleState extends State<PressableScale>
     _cancelled = false;
     _hapticPlayed = false;
     _downGlobal = event.position;
-    _pressIn();
-    _hapticTimer?.cancel();
-    if (widget.hapticOnDown && widget.haptic != AppHaptic.none) {
-      _hapticTimer = Timer(Tactile.hapticDelay, () {
-        if (!mounted || !_held || _cancelled || _hapticPlayed) return;
-        _hapticPlayed = true;
-        AppHaptics.play(widget.haptic);
-      });
-    }
+    _snapPressed();
+    if (widget.hapticOnDown) _playHaptic();
   }
 
   void _onPointerMove(PointerMoveEvent event) {
@@ -126,7 +112,7 @@ class _PressableScaleState extends State<PressableScale>
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final local = box.globalToLocal(event.position);
-    final inside = Offset.zero & box.size;
+    final inside = (Offset.zero & box.size).inflate(4);
     final moved = _downGlobal == null
         ? 0.0
         : (event.position - _downGlobal!).distance;
@@ -139,15 +125,13 @@ class _PressableScaleState extends State<PressableScale>
     if (_cancelled && !_held) return;
     _cancelled = true;
     _held = false;
-    _hapticTimer?.cancel();
-    _pressOut();
+    _springBack();
   }
 
   void _onPointerUp(PointerUpEvent event) {
-    _hapticTimer?.cancel();
     if (!_held) return;
     _held = false;
-    _pressOut();
+    _springBack();
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
@@ -156,10 +140,7 @@ class _PressableScaleState extends State<PressableScale>
 
   void _onTap() {
     if (!_canPress || _cancelled) return;
-    if (!_hapticPlayed && widget.haptic != AppHaptic.none) {
-      _hapticPlayed = true;
-      AppHaptics.play(widget.haptic);
-    }
+    _playHaptic();
     widget.onPressed!();
   }
 
@@ -193,8 +174,10 @@ class _PressableScaleState extends State<PressableScale>
           );
         }
         return Transform.scale(
+          key: const ValueKey('scanella-press-scale'),
           scale: scale,
           filterQuality: FilterQuality.low,
+          transformHitTests: false,
           child: painted,
         );
       },
@@ -225,7 +208,6 @@ class _PressableScaleState extends State<PressableScale>
     child = Semantics(
       button: true,
       enabled: _canPress,
-      excludeSemantics: false,
       child: child,
     );
 
@@ -236,7 +218,7 @@ class _PressableScaleState extends State<PressableScale>
   }
 }
 
-/// 44×44 icon control with selection haptic and a 0.96 press.
+/// 44×44 icon control with selection haptic and a pressed scale.
 class TactileIconButton extends StatelessWidget {
   const TactileIconButton({
     super.key,

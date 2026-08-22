@@ -21,46 +21,48 @@ import Vision
 }
 
 private enum ScanellaHapticsPlugin {
-  static let selection = UISelectionFeedbackGenerator()
-  static let light = UIImpactFeedbackGenerator(style: .light)
-  static let medium = UIImpactFeedbackGenerator(style: .medium)
-  static let notify = UINotificationFeedbackGenerator()
-
   static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
       name: "scanella/haptics",
       binaryMessenger: registrar.messenger()
     )
     channel.setMethodCallHandler { call, result in
-      switch call.method {
-      case "prepare":
-        selection.prepare()
-        light.prepare()
-        medium.prepare()
-        notify.prepare()
-        result(nil)
-      case "selection":
-        selection.selectionChanged()
-        selection.prepare()
-        result(nil)
-      case "impactLight":
-        light.impactOccurred()
-        light.prepare()
-        result(nil)
-      case "impactMedium":
-        medium.impactOccurred()
-        medium.prepare()
-        result(nil)
-      case "success":
-        notify.notificationOccurred(.success)
-        notify.prepare()
-        result(nil)
-      case "error":
-        notify.notificationOccurred(.error)
-        notify.prepare()
-        result(nil)
-      default:
-        result(FlutterMethodNotImplemented)
+      DispatchQueue.main.async {
+        switch call.method {
+        case "prepare":
+          UISelectionFeedbackGenerator().prepare()
+          UIImpactFeedbackGenerator(style: .light).prepare()
+          UIImpactFeedbackGenerator(style: .medium).prepare()
+          UINotificationFeedbackGenerator().prepare()
+          result(nil)
+        case "selection":
+          let generator = UISelectionFeedbackGenerator()
+          generator.prepare()
+          generator.selectionChanged()
+          result(nil)
+        case "impactLight":
+          let generator = UIImpactFeedbackGenerator(style: .light)
+          generator.prepare()
+          generator.impactOccurred()
+          result(nil)
+        case "impactMedium":
+          let generator = UIImpactFeedbackGenerator(style: .medium)
+          generator.prepare()
+          generator.impactOccurred()
+          result(nil)
+        case "success":
+          let generator = UINotificationFeedbackGenerator()
+          generator.prepare()
+          generator.notificationOccurred(.success)
+          result(nil)
+        case "error":
+          let generator = UINotificationFeedbackGenerator()
+          generator.prepare()
+          generator.notificationOccurred(.error)
+          result(nil)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
       }
     }
   }

@@ -307,9 +307,8 @@ class _ActionCard extends StatelessWidget {
     final radius = BorderRadius.circular(20);
     return PressableScale(
       onPressed: onTap,
-      haptic: AppHaptic.selection,
+      haptic: AppHaptic.impactLight,
       scale: Tactile.pressScaleCard,
-      hapticOnDown: false,
       borderRadius: radius,
       child: Material(
         color: background,
@@ -388,7 +387,7 @@ class _EmptyRecent extends StatelessWidget {
           const SizedBox(height: 4),
           PressableScale(
             onPressed: onScanFirstPage,
-            haptic: AppHaptic.selection,
+            haptic: AppHaptic.impactLight,
             scale: Tactile.pressScaleCard,
             borderRadius: BorderRadius.circular(10),
             child: const Padding(

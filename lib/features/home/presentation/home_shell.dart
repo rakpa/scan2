@@ -287,7 +287,7 @@ class _NavItem extends StatelessWidget {
       onPressed: onTap,
       haptic: AppHaptic.selection,
       scale: Tactile.pressScaleIcon,
-      overlay: false,
+      overlay: true,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

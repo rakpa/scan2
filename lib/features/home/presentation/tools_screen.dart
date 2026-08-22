@@ -89,9 +89,8 @@ class _ToolTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 10),
       child: PressableScale(
         onPressed: onTap,
-        haptic: AppHaptic.selection,
+        haptic: AppHaptic.impactLight,
         scale: Tactile.pressScaleCard,
-        hapticOnDown: false,
         borderRadius: radius,
         child: Material(
           color: Brand.surface,

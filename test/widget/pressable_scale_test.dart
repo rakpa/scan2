@@ -35,6 +35,35 @@ void main() {
     expect(taps, 1);
   });
 
+  testWidgets('press snaps to the down scale on touch-down', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: PressableScale(
+              haptic: AppHaptic.none,
+              scale: Tactile.pressScaleCard,
+              onPressed: () {},
+              child: const SizedBox(
+                width: 120,
+                height: 48,
+                child: Text('Hold me'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final gesture = await tester.startGesture(tester.getCenter(find.text('Hold me')));
+    await tester.pump();
+    final transform = tester.widget<Transform>(
+      find.byKey(const ValueKey('scanella-press-scale')),
+    );
+    expect(transform.transform.entry(0, 0), closeTo(Tactile.pressScaleCard, 0.01));
+    await gesture.up();
+  });
+
   testWidgets('sliding off a PressableScale cancels the action', (tester) async {
     var taps = 0;
     await tester.pumpWidget(

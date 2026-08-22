@@ -3,30 +3,35 @@ import 'package:flutter/services.dart';
 /// One place for Scanella's haptic map so widgets do not sprinkle raw
 /// [HapticFeedback] calls.
 ///
-/// Generators are prepared on the native side so the first tap after a screen
-/// appears is not late. System haptic-off settings are respected by the
-/// platform APIs; this helper never forces a buzz.
+/// Selection / light / medium use Flutter's generators (the same path as the
+/// camera shutter). Success / error go through the native channel, which can
+/// play [UINotificationFeedbackGenerator].
 class AppHaptics {
   const AppHaptics._();
 
   static const _channel = MethodChannel('scanella/haptics');
 
-  static Future<void> prepare() => _invoke('prepare');
+  static Future<void> prepare() async {
+    try {
+      await _channel.invokeMethod<void>('prepare');
+    } catch (_) {}
+  }
 
-  /// Tabs, filter chips, small icons, list rows, text buttons.
-  static Future<void> selection() => _invoke('selection');
+  /// Tabs, chips, small icons, list rows, text buttons.
+  static Future<void> selection() => HapticFeedback.selectionClick();
 
   /// Secondary actions: Share, Export, Print, Crop, Rotate, Adjust.
-  static Future<void> impactLight() => _invoke('impactLight');
+  /// Also used for large home tiles so the tap is feelable.
+  static Future<void> impactLight() => HapticFeedback.lightImpact();
 
-  /// Primary button, large flow card, camera FAB.
-  static Future<void> impactMedium() => _invoke('impactMedium');
+  /// Primary button, camera FAB.
+  static Future<void> impactMedium() => HapticFeedback.mediumImpact();
 
   /// Save completed, copy success, Enhance applied.
-  static Future<void> success() => _invoke('success');
+  static Future<void> success() => _invokeNative('success', HapticFeedback.mediumImpact);
 
   /// Failed detect, save error.
-  static Future<void> error() => _invoke('error');
+  static Future<void> error() => _invokeNative('error', HapticFeedback.heavyImpact);
 
   static Future<void> play(AppHaptic haptic) {
     return switch (haptic) {
@@ -39,26 +44,15 @@ class AppHaptics {
     };
   }
 
-  static Future<void> _invoke(String method) async {
+  static Future<void> _invokeNative(
+    String method,
+    Future<void> Function() fallback,
+  ) async {
     try {
       await _channel.invokeMethod<void>(method);
-    } on MissingPluginException {
-      await _fallback(method);
     } catch (_) {
-      // Never let a haptic failure block a tap.
+      await fallback();
     }
-  }
-
-  /// Tests and platforms without the channel still get a best-effort buzz.
-  static Future<void> _fallback(String method) {
-    return switch (method) {
-      'selection' => HapticFeedback.selectionClick(),
-      'impactLight' => HapticFeedback.lightImpact(),
-      'impactMedium' => HapticFeedback.mediumImpact(),
-      'success' => HapticFeedback.mediumImpact(),
-      'error' => HapticFeedback.heavyImpact(),
-      _ => Future<void>.value(),
-    };
   }
 }
 
